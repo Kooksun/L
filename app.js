@@ -11,7 +11,10 @@ const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric
 dateDisplay.textContent = new Date().toLocaleDateString('ko-KR', options);
 
 // Load Todos on Start
-document.addEventListener('DOMContentLoaded', fetchTodos);
+document.addEventListener('DOMContentLoaded', async () => {
+    await checkAndResetWeekly();
+    fetchTodos();
+});
 
 // Add Todo Event
 addBtn.addEventListener('click', addTodo);
@@ -19,20 +22,93 @@ todoInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') addTodo();
 });
 
+// Weekly Reset Logic (Wed 10:00 AM)
+async function checkAndResetWeekly() {
+    try {
+        const metaResponse = await fetch(`https://kooksun-hr-default-rtdb.firebaseio.com/meta.json`);
+        const metaData = await metaResponse.json() || {};
+        const lastReset = metaData.lastReset ? new Date(metaData.lastReset) : new Date(0);
+
+        const now = new Date();
+        const resetTarget = new Date(now);
+
+        // Find most recent Wednesday 10:00 AM
+        // Day 0=Sun, 1=Mon, 2=Tue, 3=Wed...
+        const currentDay = now.getDay();
+        const distanceToWed = (currentDay + 7 - 3) % 7; // Distance from last Wed (0 if today is Wed)
+
+        resetTarget.setDate(now.getDate() - distanceToWed);
+        resetTarget.setHours(10, 0, 0, 0);
+
+        // If today is Wednesday but BEFORE 10AM, we should look at LAST week's Wed
+        if (distanceToWed === 0 && now < resetTarget) {
+            resetTarget.setDate(resetTarget.getDate() - 7);
+        }
+
+        console.log("Last Reset:", lastReset.toLocaleString());
+        console.log("Target Reset Time:", resetTarget.toLocaleString());
+
+        if (lastReset < resetTarget) {
+            console.log("Resetting todos...");
+            // 1. Fetch current todos to find what to reset (or reset all)
+            // Ideally we reset ALL, but we only have list.
+            // Let's do a batch update approach or loop. REST API doesn't have batch update easily without ID.
+            // We'll fetch logic inside here for safety.
+
+            const todoResponse = await fetch(`${API_URL}.json`);
+            const todoData = await todoResponse.json();
+
+            if (todoData) {
+                const updates = {};
+                Object.keys(todoData).forEach(key => {
+                    // Set completed to false
+                    updates[`${key}/completed`] = false;
+                });
+
+                // Use PATCH to update multiple paths at root if structure allows, 
+                // but Firebase PATCH at root merges. updates object needs full paths from root...
+                // Actually `PATCH /todos.json` with { "id1/completed": false } doesn't work deep.
+                // We have to iterate or do a `PUT` of the whole object (risky).
+                // Safest for this simple app: Iterate fetches. Performance is okay for small list.
+                // Better: PATCH `https://.../todos.json` with the whole modified object map?
+                // Let's iterate parallel requests.
+
+                const promises = Object.keys(todoData).map(key =>
+                    fetch(`${API_URL}/${key}.json`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ completed: false })
+                    })
+                );
+                await Promise.all(promises);
+
+                alert("매주 수요일 아침 10시 리셋! 모든 할 일이 초기화되었습니다.");
+            }
+
+            // 2. Update lastReset
+            await fetch(`https://kooksun-hr-default-rtdb.firebaseio.com/meta.json`, {
+                method: 'PATCH',
+                body: JSON.stringify({ lastReset: now.toISOString() })
+            });
+        }
+    } catch (error) {
+        console.error("Weekly reset check failed:", error);
+    }
+}
+
 async function fetchTodos() {
     showLoading(true);
     todoList.innerHTML = '';
     try {
         const response = await fetch(`${API_URL}.json`);
         const data = await response.json();
-        
+
         if (data) {
             // Firebase returns object with keys, convert to array for sorting/display
             const todos = Object.keys(data).map(key => ({
                 id: key,
                 ...data[key]
             }));
-            
+
             todos.forEach(todo => renderTodo(todo));
         }
     } catch (error) {
@@ -64,7 +140,7 @@ async function addTodo() {
         const data = await response.json();
         // Firebase returns { name: "new_id" }
         newTodo.id = data.name;
-        
+
         renderTodo(newTodo);
         todoInput.value = '';
         todoInput.focus();
@@ -82,7 +158,7 @@ async function toggleTodo(id, currentStatus) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ completed: !currentStatus })
         });
-        
+
         // UI update is handled by the change event listener finding the element
         // But we need to update the DOM logic if we didn't purely rely on reload
         // Since we are not reloading, we just let the checkbox state stay as is
@@ -101,7 +177,7 @@ async function deleteTodo(id, element) {
         await fetch(`${API_URL}/${id}.json`, {
             method: 'DELETE'
         });
-        
+
         element.style.opacity = '0';
         element.style.transform = 'translateX(20px)';
         setTimeout(() => element.remove(), 300);
@@ -115,7 +191,7 @@ async function deleteTodo(id, element) {
 function renderTodo(todo) {
     const li = document.createElement('li');
     li.className = `todo-item ${todo.completed ? 'completed' : ''}`;
-    
+
     // Checkbox
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
@@ -154,7 +230,7 @@ function renderTodo(todo) {
     li.appendChild(checkbox);
     li.appendChild(span);
     li.appendChild(delBtn);
-    
+
     // Prepend to list (newest first usually looks better, but append is standard)
     // users usually expect newest at bottom for todo list, or top. 
     // Let's append for now.
