@@ -350,6 +350,31 @@ header h1 {
     opacity: 1;
 }
 
+.character-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card-settings-btn {
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-color);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.card-settings-btn:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
 .character-title {
     display: flex;
     align-items: baseline;
@@ -840,4 +865,41 @@ header h1 {
     color: #b2bec3;
     font-size: 0.9rem;
     padding: 0.2rem 0;
+}
+
+.todo-select-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.todo-select-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.todo-select-item label {
+    cursor: pointer;
+    flex: 1;
+}
+
+.todo-select-item .meta {
+    color: #b2bec3;
+    font-size: 0.9rem;
+}
+
+.todo-select-empty {
+    color: #b2bec3;
+    text-align: center;
+    padding: 1rem 0.5rem;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
 }

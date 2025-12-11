@@ -2,6 +2,7 @@ import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './l
 import { TEST_TOKEN } from './test-token.js';
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder } from './character-storage.js';
 import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders } from './todo-storage.js';
+import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter } from './character-todo-selection.js';
 
 const resultContainer = document.getElementById('result-container');
 const dateDisplay = document.getElementById('date-display');
@@ -30,6 +31,14 @@ const todoGroupInput = document.getElementById('todo-group-input');
 const todoGroupAddBtn = document.getElementById('todo-group-add-btn');
 const todoManagerList = document.getElementById('todo-manager-list');
 
+// 캐릭터 TODO 선택 모달 관련
+const characterTodoModal = document.getElementById('character-todo-modal');
+const characterTodoModalTitle = document.getElementById('character-todo-modal-title');
+const characterTodoList = document.getElementById('character-todo-list');
+const characterTodoSaveBtn = document.getElementById('character-todo-save-btn');
+const characterTodoCancelBtn = document.getElementById('character-todo-cancel-btn');
+const characterTodoSelectAllBtn = document.getElementById('character-todo-select-all-btn');
+
 // 그룹 추가 모달 관련
 const addGroupBtn = document.getElementById('add-group-btn');
 const addGroupModal = document.getElementById('add-group-modal');
@@ -41,6 +50,8 @@ const addGroupCancelBtn = document.getElementById('add-group-cancel-btn');
 let currentGroupId = null;
 let allGroups = [];
 let todoGroups = [];
+let characterTodoState = {};
+let activeTodoSelectionTarget = null;
 
 // 날짜 표시
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -56,8 +67,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateTokenStatus();
     }
 
-    // 저장된 TODO/그룹 불러오기
-    await Promise.all([loadTodoCatalog(), loadAllGroups()]);
+    // 저장된 TODO/그룹/캐릭터 TODO 상태 불러오기
+    await Promise.all([loadTodoCatalog(), loadCharacterTodoState()]);
+    await loadAllGroups();
 });
 
 // TODO 템플릿 불러오기
@@ -71,6 +83,17 @@ async function loadTodoCatalog() {
         todoGroups = [];
         renderTodoManagerList();
         showToast('TODO 목록을 불러오지 못했습니다.', 'error');
+    }
+}
+
+async function loadCharacterTodoState() {
+    try {
+        characterTodoState = await fetchAllCharacterTodoState();
+        rerenderCurrentCardsWithTodos();
+    } catch (error) {
+        console.error('캐릭터 TODO 상태 불러오기 실패:', error);
+        characterTodoState = {};
+        showToast('캐릭터 TODO 상태를 불러오지 못했습니다.', 'error');
     }
 }
 
@@ -136,6 +159,66 @@ function renderTodoManagerList() {
     `).join('');
 }
 
+function getSelectedGroupIdsForCharacter(charKey) {
+    const entry = characterTodoState[charKey];
+    if (!entry) return null; // null => 모든 그룹 표시
+    return Array.isArray(entry.selectedGroups) ? entry.selectedGroups : null;
+}
+
+function isTodoCompletedForCharacter(charKey, groupId, itemId) {
+    const completed = characterTodoState[charKey]?.completed || {};
+    return Boolean(completed[groupId]?.[itemId]);
+}
+
+function setTodoCompletionInState(charKey, groupId, itemId, isCompleted) {
+    const prevEntry = characterTodoState[charKey] || {};
+    const nextCompleted = { ...(prevEntry.completed || {}) };
+    nextCompleted[groupId] = { ...(nextCompleted[groupId] || {}) };
+    nextCompleted[groupId][itemId] = isCompleted;
+
+    characterTodoState = {
+        ...characterTodoState,
+        [charKey]: {
+            selectedGroups: Array.isArray(prevEntry.selectedGroups) ? prevEntry.selectedGroups : null,
+            completed: nextCompleted
+        }
+    };
+}
+
+function renderCharacterTodoSelectionList(charKey, characterName) {
+    if (!characterTodoList) return;
+
+    const selected = getSelectedGroupIdsForCharacter(charKey);
+    const defaultAll = !Array.isArray(selected);
+    const selectedSet = new Set(defaultAll ? todoGroups.map(group => group.groupId) : selected);
+
+    if (!todoGroups.length) {
+        characterTodoList.innerHTML = '<div class="todo-select-empty">등록된 TODO 그룹이 없습니다. 상단의 TODO 관리 버튼으로 먼저 추가하세요.</div>';
+        characterTodoSaveBtn.disabled = true;
+        characterTodoSelectAllBtn.disabled = true;
+        return;
+    }
+
+    characterTodoSaveBtn.disabled = false;
+    characterTodoSelectAllBtn.disabled = false;
+
+    characterTodoList.innerHTML = todoGroups.map(group => {
+        const safeId = `todo-select-${safeDomId(group.groupId, 'group')}`;
+        const itemCount = group.items?.length || 0;
+        return `
+            <div class="todo-select-item">
+                <input type="checkbox" id="${safeId}" data-group-id="${group.groupId}" ${selectedSet.has(group.groupId) ? 'checked' : ''}>
+                <label for="${safeId}">${group.name}</label>
+                <span class="meta">${itemCount}개 항목</span>
+            </div>
+        `;
+    }).join('');
+
+    if (characterTodoModalTitle) {
+        characterTodoModalTitle.textContent = `${characterName} TODO 설정`;
+    }
+}
+
 // 탭 렌더링
 function renderTabs() {
     if (allGroups.length === 0) {
@@ -189,18 +272,22 @@ function attachTodoCheckboxHandlers(scope) {
     if (!scope) return;
     const blocks = scope.querySelectorAll('.todo-group-block');
     blocks.forEach(block => {
-        const meta = block.querySelector('.todo-group-title .meta');
-        if (!meta) return;
         const checkboxes = block.querySelectorAll('.todo-checkbox');
-        const updateMeta = () => {
-            const total = Number(meta.dataset.total || checkboxes.length || 0);
-            const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
-            meta.dataset.checked = checked;
-            meta.textContent = `${checked}/${total}개`;
-        };
-        checkboxes.forEach(cb => cb.addEventListener('change', updateMeta));
-        updateMeta();
+        checkboxes.forEach(cb => cb.addEventListener('change', () => updateTodoGroupMeta(block)));
+        updateTodoGroupMeta(block);
     });
+}
+
+function updateTodoGroupMeta(block) {
+    if (!block) return;
+    const meta = block.querySelector('.todo-group-title .meta');
+    const checkboxes = block.querySelectorAll('.todo-checkbox');
+    if (!meta) return;
+
+    const total = Number(meta.dataset.total || checkboxes.length || 0);
+    const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+    meta.dataset.checked = checked;
+    meta.textContent = `${checked}/${total}개`;
 }
 
 async function moveTodoGroup(groupId, direction) {
@@ -500,7 +587,10 @@ function displayMiscGroups(miscGroups) {
                             <div class="misc-group-name">${group.representativeName}</div>
                             <div class="misc-group-meta">${group.characters?.length || 0} 캐릭터</div>
                         </div>
-                        <button class="danger-btn small group-delete-btn" data-group-id="${group.groupId}">삭제</button>
+                        <div class="todo-manager-actions-inline">
+                            <button class="secondary-btn xs misc-refresh-btn" data-group-id="${group.groupId}">갱신</button>
+                            <button class="danger-btn small group-delete-btn" data-group-id="${group.groupId}">삭제</button>
+                        </div>
                     </div>
                     <div class="characters-grid">
                         ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
@@ -519,16 +609,34 @@ function displayMiscGroups(miscGroups) {
             await handleDeleteGroup(btn.dataset.groupId);
         });
     });
+
+    resultContainer.querySelectorAll('.misc-refresh-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await refreshGroupData(btn.dataset.groupId);
+        });
+    });
     attachTodoCheckboxHandlers(resultContainer);
 }
 
 function getTodoGroupsForCard(char) {
     if (todoGroups.length > 0) {
-        return todoGroups.map(group => ({
+        const availableGroups = todoGroups.map(group => ({
             groupId: group.groupId || safeDomId(group.name, 'group'),
             name: group.name || '이름 없는 그룹',
             items: group.items || []
         }));
+
+        const selected = getSelectedGroupIdsForCharacter(getCharacterKey(char));
+        const hasCustomSelection = Array.isArray(selected);
+
+        if (hasCustomSelection) {
+            const selectedSet = new Set(selected);
+            return availableGroups.filter(group => selectedSet.has(group.groupId));
+        }
+
+        return availableGroups;
     }
 
     const dummyItems = getDummyTodosForCharacter(char);
@@ -547,16 +655,19 @@ function buildCharacterCards(characters, options = {}) {
     const { enableDrag = false } = options;
 
     return characters.map(char => {
+        const charKey = getCharacterKey(char);
         const todosForCard = getTodoGroupsForCard(char);
-        const todoHtml = todosForCard.map(group => {
+        const todoHtml = todosForCard.length ? todosForCard.map(group => {
             const groupIdSafe = safeDomId(group.groupId || group.name, 'group');
             const items = (group.items || []).length
                 ? group.items.map((item, index) => {
-                    const itemIdSafe = safeDomId(item.itemId ?? index, `item-${index}`);
-                    const checkboxId = `todo-${safeDomId(getCharacterKey(char), 'char')}-${groupIdSafe}-${itemIdSafe}`;
+                    const itemId = item.itemId ?? index;
+                    const itemIdSafe = safeDomId(itemId, `item-${index}`);
+                    const checkboxId = `todo-${safeDomId(charKey, 'char')}-${groupIdSafe}-${itemIdSafe}`;
+                    const isChecked = isTodoCompletedForCharacter(charKey, group.groupId, itemId);
                     return `
                             <li>
-                                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-group-id="${groupIdSafe}">
+                                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-group-id="${group.groupId}" data-item-id="${itemId}" data-character-key="${charKey}" ${isChecked ? 'checked' : ''}>
                                 <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
                             </li>
                         `;
@@ -576,16 +687,23 @@ function buildCharacterCards(characters, options = {}) {
                         </ul>
                     </div>
                 `;
-        }).join('');
+        }).join('') : '<div class="todo-empty">선택된 TODO 그룹이 없습니다. ⚙️ 버튼으로 설정하세요.</div>';
 
         return `
         <div class="character-card ${enableDrag ? 'draggable-card' : ''}" 
              data-character-key="${getCharacterKey(char)}"
              data-display-order="${char.displayOrder ?? 0}">
-            <div class="character-header drag-handle" ${enableDrag ? 'draggable="true"' : ''} data-tooltip="서버: ${char.ServerName} · 직업: ${char.CharacterClassName}">
-                <div class="character-title">
+            <div class="character-header" data-tooltip="서버: ${char.ServerName} · 직업: ${char.CharacterClassName}">
+                <div class="character-title drag-handle" ${enableDrag ? 'draggable="true"' : ''}>
                     <span class="character-name">${char.CharacterName}</span>
                     <span class="character-level-pill">Lv. ${char.ItemAvgLevel}</span>
+                </div>
+                <div class="character-actions">
+                    <button class="card-settings-btn" 
+                            data-character-key="${getCharacterKey(char)}"
+                            data-character-name="${char.CharacterName}">
+                        ⚙️
+                    </button>
                 </div>
             </div>
             <div class="card-divider"></div>
@@ -671,6 +789,106 @@ todoModal.addEventListener('click', (e) => {
         closeTodoModal();
     }
 });
+
+function openCharacterTodoModal(charKey, characterName) {
+    activeTodoSelectionTarget = { charKey, characterName };
+    renderCharacterTodoSelectionList(charKey, characterName);
+    characterTodoModal.style.display = 'flex';
+}
+
+function closeCharacterTodoModal() {
+    activeTodoSelectionTarget = null;
+    characterTodoModal.style.display = 'none';
+}
+
+characterTodoCancelBtn?.addEventListener('click', closeCharacterTodoModal);
+characterTodoModal?.addEventListener('click', (e) => {
+    if (e.target === characterTodoModal) {
+        closeCharacterTodoModal();
+    }
+});
+
+characterTodoSaveBtn?.addEventListener('click', async () => {
+    if (!activeTodoSelectionTarget || !characterTodoList) return;
+
+    const selectedIds = Array.from(characterTodoList.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(input => input.dataset.groupId);
+
+    const allGroupIds = todoGroups.map(group => group.groupId);
+    const isAllSelected = selectedIds.length === allGroupIds.length && allGroupIds.every(id => selectedIds.includes(id));
+
+    try {
+        characterTodoSaveBtn.disabled = true;
+        let savedEntry = null;
+        if (isAllSelected) {
+            savedEntry = await clearTodoSelectionForCharacter(activeTodoSelectionTarget.charKey);
+        } else {
+            savedEntry = await saveSelectedGroupsForCharacter(activeTodoSelectionTarget.charKey, selectedIds);
+        }
+
+        const prevCompleted = characterTodoState[activeTodoSelectionTarget.charKey]?.completed || {};
+        characterTodoState = {
+            ...characterTodoState,
+            [activeTodoSelectionTarget.charKey]: {
+                selectedGroups: savedEntry?.selectedGroups ?? null,
+                completed: prevCompleted
+            }
+        };
+
+        rerenderCurrentCardsWithTodos();
+        closeCharacterTodoModal();
+        showToast('TODO 그룹을 적용했습니다.');
+    } catch (error) {
+        console.error('캐릭터 TODO 그룹 저장 실패:', error);
+        showToast('TODO 그룹 저장에 실패했습니다.', 'error');
+    } finally {
+        characterTodoSaveBtn.disabled = false;
+    }
+});
+
+characterTodoSelectAllBtn?.addEventListener('click', () => {
+    if (!characterTodoList) return;
+    characterTodoList.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.checked = true;
+    });
+});
+
+resultContainer.addEventListener('change', async (e) => {
+    const checkbox = e.target.closest('.todo-checkbox');
+    if (!checkbox) return;
+
+    const { characterKey, groupId, itemId } = checkbox.dataset;
+    if (!characterKey || !groupId || !itemId) return;
+
+    const previousValue = isTodoCompletedForCharacter(characterKey, groupId, itemId);
+    const nextValue = checkbox.checked;
+
+    try {
+        await saveTodoCompletionForCharacter(characterKey, groupId, itemId, nextValue);
+        setTodoCompletionInState(characterKey, groupId, itemId, nextValue);
+    } catch (error) {
+        console.error('TODO 완료 상태 저장 실패:', error);
+        checkbox.checked = previousValue;
+        updateTodoGroupMeta(checkbox.closest('.todo-group-block'));
+        showToast('완료 상태 저장에 실패했습니다.', 'error');
+    }
+});
+
+resultContainer.addEventListener('click', (e) => {
+    const settingsBtn = e.target.closest('.card-settings-btn');
+    if (settingsBtn) {
+        const { characterKey, characterName } = settingsBtn.dataset;
+        openCharacterTodoModal(characterKey, characterName);
+        e.stopPropagation();
+        return;
+    }
+});
+
+resultContainer.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.card-settings-btn')) {
+        e.stopPropagation();
+    }
+}, true);
 
 todoGroupAddBtn.addEventListener('click', async () => {
     const name = todoGroupInput.value.trim();
