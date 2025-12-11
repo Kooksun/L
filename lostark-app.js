@@ -17,6 +17,11 @@ const saveTokenBtn = document.getElementById('save-token-btn');
 const cancelTokenBtn = document.getElementById('cancel-token-btn');
 const clearTokenBtn = document.getElementById('clear-token-btn');
 const tokenStatus = document.getElementById('token-status');
+const toast = document.getElementById('toast');
+const confirmModal = document.getElementById('confirm-modal');
+const confirmMessage = document.getElementById('confirm-message');
+const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+const confirmOkBtn = document.getElementById('confirm-ok-btn');
 
 // 현재 선택된 그룹
 let currentGroupId = null;
@@ -125,12 +130,61 @@ function selectGroup(groupId) {
     }
 }
 
+// 삭제 확인 모달
+function showConfirmModal(message) {
+    confirmMessage.textContent = message;
+    confirmModal.style.display = 'flex';
+
+    return new Promise((resolve) => {
+        const cleanup = (result) => {
+            confirmModal.style.display = 'none';
+            confirmCancelBtn.removeEventListener('click', onCancel);
+            confirmOkBtn.removeEventListener('click', onConfirm);
+            confirmModal.removeEventListener('click', onBackdrop);
+            resolve(result);
+        };
+
+        const onCancel = () => cleanup(false);
+        const onConfirm = () => cleanup(true);
+        const onBackdrop = (e) => {
+            if (e.target === confirmModal) {
+                cleanup(false);
+            }
+        };
+
+        confirmCancelBtn.addEventListener('click', onCancel);
+        confirmOkBtn.addEventListener('click', onConfirm);
+        confirmModal.addEventListener('click', onBackdrop);
+    });
+}
+
+// 토스트 표시
+let toastTimeout = null;
+function showToast(message, type = 'success') {
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.classList.remove('show', 'success', 'error');
+    toast.classList.add(type === 'error' ? 'error' : 'success');
+
+    // 리플로우를 위해 강제 측정
+    void toast.offsetWidth;
+
+    toast.classList.add('show');
+
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+    }, 2000);
+}
+
 // 그룹 삭제
 async function handleDeleteGroup(groupId) {
     const group = allGroups.find(g => g.groupId === groupId);
     if (!group) return;
 
-    if (!confirm(`"${group.representativeName}" 그룹을 삭제하시겠습니까?`)) {
+    const confirmed = await showConfirmModal(`"${group.representativeName}" 그룹을 삭제하시겠습니까?`);
+    if (!confirmed) {
         return;
     }
 
@@ -151,9 +205,9 @@ async function handleDeleteGroup(groupId) {
         }
 
         renderTabs();
-        alert('그룹이 삭제되었습니다.');
+        showToast('그룹이 삭제되었습니다.', 'success');
     } catch (error) {
-        alert('그룹 삭제에 실패했습니다.');
+        showToast('그룹 삭제에 실패했습니다.', 'error');
     }
 }
 
@@ -283,6 +337,9 @@ async function searchCharacter(characterName) {
 
         // 그룹 목록에 추가
         allGroups.unshift(savedGroup);
+
+        // 탭 렌더링 (새 그룹이 즉시 표시되도록)
+        renderTabs();
 
         // 새로 추가된 그룹 선택
         selectGroup(savedGroup.groupId);

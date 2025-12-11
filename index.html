@@ -41,6 +41,7 @@
             <!-- 캐릭터 정보가 여기에 표시됩니다 -->
         </div>
     </div>
+    <div id="toast" class="toast" aria-live="polite"></div>
 
     <!-- 토큰 입력 모달 -->
     <div id="token-modal" class="modal">
@@ -54,6 +55,18 @@
                 <button id="clear-token-btn" class="danger-btn">토큰 삭제</button>
             </div>
             <p class="token-status" id="token-status"></p>
+        </div>
+    </div>
+
+    <!-- 그룹 삭제 확인 모달 -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content">
+            <h2>그룹 삭제</h2>
+            <p id="confirm-message"></p>
+            <div class="modal-buttons">
+                <button id="confirm-cancel-btn" class="secondary-btn">취소</button>
+                <button id="confirm-ok-btn" class="danger-btn">삭제</button>
+            </div>
         </div>
     </div>
 

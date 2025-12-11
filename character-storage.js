@@ -6,10 +6,12 @@ function selectRepresentativeCharacter(characters) {
         return null;
     }
 
-    // ItemAvgLevel을 숫자로 변환하여 비교
+    // ItemAvgLevel을 숫자로 변환하여 비교 (쉼표 제거 후 숫자 부분만 추출)
     const sorted = [...characters].sort((a, b) => {
-        const levelA = parseFloat(a.ItemAvgLevel) || 0;
-        const levelB = parseFloat(b.ItemAvgLevel) || 0;
+        const levelStrA = String(a.ItemAvgLevel).replace(/,/g, '');
+        const levelStrB = String(b.ItemAvgLevel).replace(/,/g, '');
+        const levelA = parseFloat(levelStrA.match(/^\d+\.?\d*/)?.[0]) || 0;
+        const levelB = parseFloat(levelStrB.match(/^\d+\.?\d*/)?.[0]) || 0;
         return levelB - levelA; // 내림차순
     });
 
@@ -22,11 +24,21 @@ async function saveCharacterGroup(characters) {
         throw new Error('저장할 캐릭터가 없습니다.');
     }
 
-    const representative = selectRepresentativeCharacter(characters);
+    // 레벨 1000 미만 캐릭터 필터링
+    const filteredCharacters = characters.filter(char => {
+        const level = parseFloat(String(char.ItemAvgLevel).replace(/,/g, '')) || 0;
+        return level >= 1000;
+    });
+
+    if (filteredCharacters.length === 0) {
+        throw new Error('레벨 1000 이상인 캐릭터가 없습니다.');
+    }
+
+    const representative = selectRepresentativeCharacter(filteredCharacters);
     const representativeName = representative.CharacterName;
 
     // ItemMaxLevel 제거 (사용자 요청)
-    const cleanedCharacters = characters.map(char => {
+    const cleanedCharacters = filteredCharacters.map(char => {
         const { ItemMaxLevel, ...rest } = char;
         return rest;
     });
