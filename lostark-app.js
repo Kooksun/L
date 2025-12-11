@@ -1,6 +1,7 @@
 import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './lostark-api.js';
 import { TEST_TOKEN } from './test-token.js';
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder } from './character-storage.js';
+import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders } from './todo-storage.js';
 
 const resultContainer = document.getElementById('result-container');
 const dateDisplay = document.getElementById('date-display');
@@ -21,6 +22,14 @@ const confirmMessage = document.getElementById('confirm-message');
 const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
 const confirmOkBtn = document.getElementById('confirm-ok-btn');
 
+// TODO 관리 모달 관련
+const todoManageBtn = document.getElementById('todo-manage-btn');
+const todoModal = document.getElementById('todo-modal');
+const todoModalCloseBtn = document.getElementById('todo-modal-close-btn');
+const todoGroupInput = document.getElementById('todo-group-input');
+const todoGroupAddBtn = document.getElementById('todo-group-add-btn');
+const todoManagerList = document.getElementById('todo-manager-list');
+
 // 그룹 추가 모달 관련
 const addGroupBtn = document.getElementById('add-group-btn');
 const addGroupModal = document.getElementById('add-group-modal');
@@ -31,6 +40,7 @@ const addGroupCancelBtn = document.getElementById('add-group-cancel-btn');
 // 현재 선택된 그룹
 let currentGroupId = null;
 let allGroups = [];
+let todoGroups = [];
 
 // 날짜 표시
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -46,9 +56,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateTokenStatus();
     }
 
-    // 저장된 그룹 불러오기
-    await loadAllGroups();
+    // 저장된 TODO/그룹 불러오기
+    await Promise.all([loadTodoCatalog(), loadAllGroups()]);
 });
+
+// TODO 템플릿 불러오기
+async function loadTodoCatalog() {
+    try {
+        todoGroups = await getAllTodoGroups();
+        renderTodoManagerList();
+        rerenderCurrentCardsWithTodos();
+    } catch (error) {
+        console.error('TODO 목록 불러오기 실패:', error);
+        todoGroups = [];
+        renderTodoManagerList();
+        showToast('TODO 목록을 불러오지 못했습니다.', 'error');
+    }
+}
 
 // 저장된 모든 그룹 불러오기
 async function loadAllGroups() {
@@ -58,14 +82,58 @@ async function loadAllGroups() {
         renderTabs();
 
         // 첫 번째 그룹 자동 선택
-        if (allGroups.length > 0) {
-            selectGroup(allGroups[0].groupId);
+        const { mainGroups, miscGroups } = getGroupBuckets();
+        if (mainGroups.length > 0) {
+            selectGroup(mainGroups[0].groupId);
+        } else if (miscGroups.length > 0) {
+            selectGroup('misc');
         }
     } catch (error) {
         console.error('그룹 불러오기 실패:', error);
     } finally {
         showLoading(false);
     }
+}
+
+function renderTodoManagerList() {
+    if (!todoManagerList) return;
+
+    if (!todoGroups.length) {
+        todoManagerList.innerHTML = '<div class="todo-manager-empty">등록된 TODO 그룹이 없습니다. 오른쪽 상단의 입력 칸으로 새 그룹을 추가하세요.</div>';
+        return;
+    }
+
+    todoManagerList.innerHTML = todoGroups.map(group => `
+        <div class="todo-manager-card" data-group-id="${group.groupId}">
+            <div class="todo-manager-card-header">
+                <div>
+                    <div class="misc-group-name">${group.name}</div>
+                    <div class="meta">${group.items?.length || 0}개 항목</div>
+                </div>
+                <div class="todo-manager-actions-inline">
+                    <button class="secondary-btn xs todo-group-move-btn" data-direction="up" data-group-id="${group.groupId}">▲</button>
+                    <button class="secondary-btn xs todo-group-move-btn" data-direction="down" data-group-id="${group.groupId}">▼</button>
+                    <button class="danger-btn small todo-group-delete-btn" data-group-id="${group.groupId}">삭제</button>
+                </div>
+            </div>
+            <ul class="todo-manager-item-list">
+                ${(group.items || []).length ? group.items.map(item => `
+                    <li data-item-id="${item.itemId}">
+                        <span>${item.name}</span>
+                        <div class="todo-manager-actions-inline">
+                            <button class="secondary-btn xs todo-item-move-btn" data-direction="up" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▲</button>
+                            <button class="secondary-btn xs todo-item-move-btn" data-direction="down" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▼</button>
+                            <button class="secondary-btn xs todo-item-delete-btn" data-group-id="${group.groupId}" data-item-id="${item.itemId}">삭제</button>
+                        </div>
+                    </li>
+                `).join('') : '<li class="todo-manager-empty">항목이 없습니다.</li>'}
+            </ul>
+            <div class="todo-add-row">
+                <input type="text" id="todo-item-input-${group.groupId}" data-group-id="${group.groupId}" placeholder="항목 추가 (예: 천상)">
+                <button class="primary-btn todo-item-add-btn" data-group-id="${group.groupId}">추가</button>
+            </div>
+        </div>
+    `).join('');
 }
 
 // 탭 렌더링
@@ -103,6 +171,109 @@ function getGroupBuckets() {
     const mainGroups = allGroups.filter(g => (g.characters?.length || 0) > 6);
     const miscGroups = allGroups.filter(g => (g.characters?.length || 0) <= 6);
     return { mainGroups, miscGroups };
+}
+
+function rerenderCurrentCardsWithTodos() {
+    if (!currentGroupId) return;
+    const { mainGroups, miscGroups } = getGroupBuckets();
+    const group = mainGroups.find(g => g.groupId === currentGroupId);
+
+    if (group) {
+        displayCharacters(group);
+    } else if (currentGroupId === 'misc') {
+        displayMiscGroups(miscGroups);
+    }
+}
+
+function attachTodoCheckboxHandlers(scope) {
+    if (!scope) return;
+    const blocks = scope.querySelectorAll('.todo-group-block');
+    blocks.forEach(block => {
+        const meta = block.querySelector('.todo-group-title .meta');
+        if (!meta) return;
+        const checkboxes = block.querySelectorAll('.todo-checkbox');
+        const updateMeta = () => {
+            const total = Number(meta.dataset.total || checkboxes.length || 0);
+            const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+            meta.dataset.checked = checked;
+            meta.textContent = `${checked}/${total}개`;
+        };
+        checkboxes.forEach(cb => cb.addEventListener('change', updateMeta));
+        updateMeta();
+    });
+}
+
+async function moveTodoGroup(groupId, direction) {
+    const index = todoGroups.findIndex(g => g.groupId === groupId);
+    if (index === -1) return;
+
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= todoGroups.length) return;
+
+    const clone = [...todoGroups];
+    [clone[index], clone[swapIndex]] = [clone[swapIndex], clone[index]];
+    const prevState = todoGroups;
+    todoGroups = clone;
+    renderTodoManagerList();
+    rerenderCurrentCardsWithTodos();
+
+    try {
+        await persistTodoGroupOrders();
+        showToast('그룹 순서를 저장했습니다.');
+    } catch (error) {
+        console.error('TODO 그룹 순서 저장 실패:', error);
+        todoGroups = prevState;
+        renderTodoManagerList();
+        rerenderCurrentCardsWithTodos();
+        showToast('순서 저장에 실패했습니다.', 'error');
+    }
+}
+
+async function persistTodoGroupOrders() {
+    const orderEntries = todoGroups.map((group, idx) => ({
+        groupId: group.groupId,
+        order: idx
+    }));
+    await updateTodoGroupOrders(orderEntries);
+}
+
+async function moveTodoItem(groupId, itemId, direction) {
+    const group = todoGroups.find(g => g.groupId === groupId);
+    if (!group) return;
+
+    const items = group.items || [];
+    const index = items.findIndex(item => item.itemId === itemId);
+    if (index === -1) return;
+
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= items.length) return;
+
+    const newItems = [...items];
+    [newItems[index], newItems[swapIndex]] = [newItems[swapIndex], newItems[index]];
+
+    const prevItems = group.items;
+    group.items = newItems;
+    renderTodoManagerList();
+    rerenderCurrentCardsWithTodos();
+
+    try {
+        await persistTodoItemOrders(groupId, newItems);
+        showToast('항목 순서를 저장했습니다.');
+    } catch (error) {
+        console.error('TODO 항목 순서 저장 실패:', error);
+        group.items = prevItems;
+        renderTodoManagerList();
+        rerenderCurrentCardsWithTodos();
+        showToast('항목 순서 저장에 실패했습니다.', 'error');
+    }
+}
+
+async function persistTodoItemOrders(groupId, items) {
+    const orderEntries = (items || []).map((item, idx) => ({
+        itemId: item.itemId,
+        order: idx
+    }));
+    await updateTodoItemOrders(groupId, orderEntries);
 }
 
 // 탭 이벤트 설정 (한 번만 호출)
@@ -246,6 +417,11 @@ function showToast(message, type = 'success') {
     }, 2000);
 }
 
+function safeDomId(value, fallback = 'item') {
+    const cleaned = String(value ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
+    return cleaned || fallback;
+}
+
 // 그룹 삭제
 async function handleDeleteGroup(groupId) {
     const group = allGroups.find(g => g.groupId === groupId);
@@ -297,10 +473,6 @@ function displayCharacters(group) {
 
     const html = `
         <div class="character-list">
-            <div class="list-header">
-                <h2>🎭 ${group.representativeName}의 캐릭터 (${characters.length}개)</h2>
-                <div class="drag-hint">카드를 드래그해서 순서를 변경하세요</div>
-            </div>
             <div class="characters-grid" data-group-id="${group.groupId}">
                 ${buildCharacterCards(characters, { enableDrag: true })}
             </div>
@@ -309,6 +481,7 @@ function displayCharacters(group) {
 
     resultContainer.innerHTML = html;
     setupDragAndDrop(group.groupId);
+    attachTodoCheckboxHandlers(resultContainer);
 }
 
 // 기타 그룹 표시 (6개 이하 그룹 모음)
@@ -320,7 +493,6 @@ function displayMiscGroups(miscGroups) {
 
     const html = `
         <div class="misc-groups">
-            <h2>🗂 기타 그룹 (${miscGroups.length}개)</h2>
             ${miscGroups.map(group => `
                 <div class="misc-group-card">
                     <div class="misc-group-header">
@@ -347,34 +519,82 @@ function displayMiscGroups(miscGroups) {
             await handleDeleteGroup(btn.dataset.groupId);
         });
     });
+    attachTodoCheckboxHandlers(resultContainer);
+}
+
+function getTodoGroupsForCard(char) {
+    if (todoGroups.length > 0) {
+        return todoGroups.map(group => ({
+            groupId: group.groupId || safeDomId(group.name, 'group'),
+            name: group.name || '이름 없는 그룹',
+            items: group.items || []
+        }));
+    }
+
+    const dummyItems = getDummyTodosForCharacter(char);
+    return [{
+        groupId: 'default',
+        name: '기본 TODO',
+        items: dummyItems.map((name, index) => ({
+            itemId: `dummy-${index}`,
+            name
+        }))
+    }];
 }
 
 // 캐릭터 카드 HTML 생성
 function buildCharacterCards(characters, options = {}) {
     const { enableDrag = false } = options;
 
-    return characters.map(char => `
+    return characters.map(char => {
+        const todosForCard = getTodoGroupsForCard(char);
+        const todoHtml = todosForCard.map(group => {
+            const groupIdSafe = safeDomId(group.groupId || group.name, 'group');
+            const items = (group.items || []).length
+                ? group.items.map((item, index) => {
+                    const itemIdSafe = safeDomId(item.itemId ?? index, `item-${index}`);
+                    const checkboxId = `todo-${safeDomId(getCharacterKey(char), 'char')}-${groupIdSafe}-${itemIdSafe}`;
+                    return `
+                            <li>
+                                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-group-id="${groupIdSafe}">
+                                <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
+                            </li>
+                        `;
+                }).join('')
+                : '<li class="todo-empty">등록된 항목이 없습니다.</li>';
+
+            const totalCount = group.items?.length || 0;
+
+            return `
+                    <div class="todo-group-block">
+                        <div class="todo-group-title">
+                            <span>${group.name}</span>
+                            <span class="meta" data-group-id="${groupIdSafe}" data-total="${totalCount}" data-checked="0">0/${totalCount}개</span>
+                        </div>
+                        <ul class="todo-list">
+                            ${items}
+                        </ul>
+                    </div>
+                `;
+        }).join('');
+
+        return `
         <div class="character-card ${enableDrag ? 'draggable-card' : ''}" 
-             ${enableDrag ? 'draggable="true"' : ''} 
              data-character-key="${getCharacterKey(char)}"
              data-display-order="${char.displayOrder ?? 0}">
-            <div class="order-badge">#${(char.displayOrder ?? 0) + 1}</div>
-            <div class="character-header">
-                <h3>${char.CharacterName}</h3>
-                <span class="server-badge">${char.ServerName}</span>
+            <div class="character-header drag-handle" ${enableDrag ? 'draggable="true"' : ''} data-tooltip="서버: ${char.ServerName} · 직업: ${char.CharacterClassName}">
+                <div class="character-title">
+                    <span class="character-name">${char.CharacterName}</span>
+                    <span class="character-level-pill">Lv. ${char.ItemAvgLevel}</span>
+                </div>
             </div>
-            <div class="character-info">
-                <div class="info-row">
-                    <span class="label">직업:</span>
-                    <span class="value">${char.CharacterClassName}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">레벨:</span>
-                    <span class="value level">${char.ItemAvgLevel}</span>
-                </div>
+            <div class="card-divider"></div>
+            <div class="todo-section">
+                ${todoHtml}
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // 토큰 상태 업데이트
@@ -429,6 +649,137 @@ clearTokenBtn.addEventListener('click', () => {
         tokenInput.value = '';
         updateTokenStatus();
         alert('토큰이 삭제되었습니다.');
+    }
+});
+
+// TODO 관리 모달
+function openTodoModal() {
+    todoModal.style.display = 'flex';
+    renderTodoManagerList();
+    // 최신 상태 동기화
+    loadTodoCatalog();
+}
+
+function closeTodoModal() {
+    todoModal.style.display = 'none';
+}
+
+todoManageBtn.addEventListener('click', openTodoModal);
+todoModalCloseBtn.addEventListener('click', closeTodoModal);
+todoModal.addEventListener('click', (e) => {
+    if (e.target === todoModal) {
+        closeTodoModal();
+    }
+});
+
+todoGroupAddBtn.addEventListener('click', async () => {
+    const name = todoGroupInput.value.trim();
+    if (!name) {
+        showToast('그룹 이름을 입력하세요.', 'error');
+        return;
+    }
+
+    todoGroupAddBtn.disabled = true;
+    try {
+        const newGroup = await createTodoGroup(name, todoGroups.length);
+        todoGroups = [...todoGroups, newGroup];
+        todoGroupInput.value = '';
+        renderTodoManagerList();
+        rerenderCurrentCardsWithTodos();
+        showToast('TODO 그룹을 추가했습니다.');
+    } catch (error) {
+        console.error('TODO 그룹 추가 실패:', error);
+        showToast('TODO 그룹 추가에 실패했습니다.', 'error');
+    } finally {
+        todoGroupAddBtn.disabled = false;
+    }
+});
+
+todoManagerList.addEventListener('click', async (e) => {
+    const addBtn = e.target.closest('.todo-item-add-btn');
+    if (addBtn) {
+        const groupId = addBtn.dataset.groupId;
+        const input = document.getElementById(`todo-item-input-${groupId}`);
+        if (!input) return;
+        const value = input.value.trim();
+        if (!value) {
+            showToast('항목 이름을 입력하세요.', 'error');
+            return;
+        }
+
+        addBtn.disabled = true;
+        try {
+            const group = todoGroups.find(g => g.groupId === groupId);
+            const newItem = await addTodoItem(groupId, value, (group?.items?.length ?? 0));
+            if (group) {
+                group.items = [...(group.items || []), newItem];
+            }
+            input.value = '';
+            renderTodoManagerList();
+            rerenderCurrentCardsWithTodos();
+            showToast('항목을 추가했습니다.');
+        } catch (error) {
+            console.error('TODO 항목 추가 실패:', error);
+            showToast('항목 추가에 실패했습니다.', 'error');
+        } finally {
+            addBtn.disabled = false;
+        }
+        return;
+    }
+
+    const deleteItemBtn = e.target.closest('.todo-item-delete-btn');
+    if (deleteItemBtn) {
+        const { groupId, itemId } = deleteItemBtn.dataset;
+        const confirmed = await showConfirmModal('이 항목을 삭제하시겠습니까?');
+        if (!confirmed) return;
+
+        try {
+            await deleteTodoItem(groupId, itemId);
+            const group = todoGroups.find(g => g.groupId === groupId);
+            if (group) {
+                group.items = (group.items || []).filter(item => item.itemId !== itemId);
+            }
+            renderTodoManagerList();
+            rerenderCurrentCardsWithTodos();
+            showToast('항목을 삭제했습니다.');
+        } catch (error) {
+            console.error('TODO 항목 삭제 실패:', error);
+            showToast('항목 삭제에 실패했습니다.', 'error');
+        }
+        return;
+    }
+
+    const moveBtn = e.target.closest('.todo-group-move-btn');
+    if (moveBtn) {
+        const { groupId, direction } = moveBtn.dataset;
+        await moveTodoGroup(groupId, direction);
+        return;
+    }
+
+    const moveItemBtn = e.target.closest('.todo-item-move-btn');
+    if (moveItemBtn) {
+        const { groupId, itemId, direction } = moveItemBtn.dataset;
+        await moveTodoItem(groupId, itemId, direction);
+        return;
+    }
+
+    const deleteGroupBtn = e.target.closest('.todo-group-delete-btn');
+    if (deleteGroupBtn) {
+        const groupId = deleteGroupBtn.dataset.groupId;
+        const targetGroup = todoGroups.find(g => g.groupId === groupId);
+        const confirmed = await showConfirmModal(`"${targetGroup?.name || '그룹'}" 그룹을 삭제하시겠습니까?`);
+        if (!confirmed) return;
+
+        try {
+            await deleteTodoGroup(groupId);
+            todoGroups = todoGroups.filter(g => g.groupId !== groupId);
+            renderTodoManagerList();
+            rerenderCurrentCardsWithTodos();
+            showToast('TODO 그룹을 삭제했습니다.');
+        } catch (error) {
+            console.error('TODO 그룹 삭제 실패:', error);
+            showToast('그룹 삭제에 실패했습니다.', 'error');
+        }
     }
 });
 
@@ -524,6 +875,39 @@ function getCharacterKey(char) {
     return `${char.CharacterName || ''}__${char.ServerName || ''}`;
 }
 
+// 캐릭터별 더미 Todo 생성 (해시 기반으로 2~3개 결정)
+function getDummyTodosForCharacter(char) {
+    const todoPool = [
+        '카오스 던전 2회 돌기',
+        '가디언 토벌 1회 완료',
+        '에포나 일일 의뢰 3회',
+        '길드 출석 및 기부',
+        '실마엘 혈석 교환 확인',
+        '생활 재료 수확'
+    ];
+
+    const seed = hashString(getCharacterKey(char));
+    const todoCount = 2 + (seed % 2); // 2 또는 3개
+    const startIndex = seed % todoPool.length;
+
+    const todos = [];
+    for (let i = 0; i < todoCount; i++) {
+        const nextIndex = (startIndex + i * 2) % todoPool.length;
+        todos.push(todoPool[nextIndex]);
+    }
+
+    return todos;
+}
+
+function hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = (hash << 5) - hash + str.charCodeAt(i);
+        hash |= 0; // 32비트 정수로 변환
+    }
+    return Math.abs(hash);
+}
+
 // 화면 표시 순서 정렬
 function getCharactersInDisplayOrder(characters) {
     return [...(characters || [])].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
@@ -534,28 +918,43 @@ function setupDragAndDrop(groupId) {
     const grid = resultContainer.querySelector('.characters-grid');
     if (!grid) return;
 
-    let dragActive = null;
+    let dragState = null;
 
     grid.addEventListener('dragstart', (e) => {
-        const card = e.target.closest('.character-card');
+        const handle = e.target.closest('.drag-handle');
+        if (!handle) return;
+        const card = handle.closest('.character-card');
         if (!card) return;
-        dragActive = card;
+        const rect = card.getBoundingClientRect();
+        dragState = {
+            card,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            width: rect.width,
+            height: rect.height
+        };
         card.classList.add('dragging');
         e.dataTransfer.setData('text/plain', '');
         e.dataTransfer.effectAllowed = 'move';
+        // Show the whole card as the drag preview instead of just the handle.
+        e.dataTransfer.setDragImage(card, dragState.offsetX, dragState.offsetY);
     });
 
     grid.addEventListener('dragover', (e) => {
         e.preventDefault();
-        const draggingCard = grid.querySelector('.dragging');
-        if (!draggingCard) return;
+        if (!dragState) return;
+        const { card: draggingCard, offsetX, offsetY, width, height } = dragState;
 
-        const afterElement = getDragAfterElement(grid, e.clientY);
-        if (!afterElement) {
+        // Use the dragging card's center as the reference point to avoid jitter around corners.
+        const referenceX = e.clientX - offsetX + width / 2;
+        const referenceY = e.clientY - offsetY + height / 2;
+
+        const targetCard = getNearestCard(grid, referenceX, referenceY, draggingCard);
+        if (!targetCard) {
             grid.appendChild(draggingCard);
-        } else {
-            grid.insertBefore(draggingCard, afterElement);
+            return;
         }
+        insertAtPosition(grid, draggingCard, targetCard, referenceX, referenceY);
     });
 
     grid.addEventListener('drop', (e) => {
@@ -563,28 +962,49 @@ function setupDragAndDrop(groupId) {
     });
 
     grid.addEventListener('dragend', async () => {
-        if (!dragActive) return;
-        dragActive.classList.remove('dragging');
-        dragActive = null;
+        if (!dragState) return;
+        dragState.card.classList.remove('dragging');
+        dragState = null;
 
         const cards = Array.from(grid.querySelectorAll('.character-card'));
         await persistCharacterOrder(groupId, cards);
     });
 }
 
-function getDragAfterElement(container, y) {
-    const cards = [...container.querySelectorAll('.character-card:not(.dragging)')];
+function getNearestCard(container, x, y, draggingCard = null) {
+    const cards = [...container.querySelectorAll('.character-card')]
+        .filter(card => card !== draggingCard);
+    if (!cards.length) return null;
 
-    return cards.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
+    let closest = { element: null, distance: Number.POSITIVE_INFINITY };
 
-        if (offset < 0 && offset > closest.offset) {
-            return { offset, element: child };
+    cards.forEach((card) => {
+        const rect = card.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const distance = Math.hypot(x - cx, y - cy);
+
+        if (distance < closest.distance) {
+            closest = { element: card, distance };
         }
+    });
 
-        return closest;
-    }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    return closest.element;
+}
+
+function insertAtPosition(container, draggingCard, targetCard, pointerX, pointerY) {
+    if (!targetCard || !draggingCard) return;
+
+    const rect = targetCard.getBoundingClientRect();
+    const targetCenterY = rect.top + rect.height / 2;
+    const targetCenterX = rect.left + rect.width / 2;
+    const isAfter = pointerY > targetCenterY || (Math.abs(pointerY - targetCenterY) < rect.height * 0.1 && pointerX > targetCenterX);
+
+    if (isAfter) {
+        container.insertBefore(draggingCard, targetCard.nextSibling);
+    } else {
+        container.insertBefore(draggingCard, targetCard);
+    }
 }
 
 async function persistCharacterOrder(groupId, cards) {
