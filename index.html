@@ -1,34 +1,63 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Todo App</title>
+    <title>로스트아크 캐릭터 조회</title>
     <link rel="stylesheet" href="style.css">
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap"
+        rel="stylesheet">
 </head>
+
 <body>
     <div class="container">
         <header>
-            <h1>오늘 할 일</h1>
+            <h1>🎮 로스트아크 캐릭터 조회</h1>
             <p id="date-display"></p>
+            <button id="token-settings-btn" class="settings-btn">⚙️ API 토큰 설정</button>
         </header>
 
         <section class="input-section">
-            <input type="text" id="todo-input" placeholder="새로운 할 일을 입력하세요..." autocomplete="off">
-            <button id="add-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <input type="text" id="character-input" placeholder="캐릭터 이름을 입력하세요..." autocomplete="off">
+            <button id="search-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
             </button>
         </section>
 
         <div class="loading-spinner" id="loading">불러오는 중...</div>
 
-        <ul id="todo-list" class="todo-list">
-            <!-- Items will be added here -->
-        </ul>
+        <!-- 탭 컨테이너 -->
+        <div id="tabs-container" class="tabs-container">
+            <!-- 탭들이 여기에 동적으로 추가됩니다 -->
+        </div>
+
+        <div id="result-container" class="result-container">
+            <!-- 캐릭터 정보가 여기에 표시됩니다 -->
+        </div>
     </div>
 
-    <script src="app.js"></script>
+    <!-- 토큰 입력 모달 -->
+    <div id="token-modal" class="modal">
+        <div class="modal-content">
+            <h2>API 토큰 설정</h2>
+            <p>로스트아크 개발자 포털에서 발급받은 JWT 토큰을 입력하세요.</p>
+            <textarea id="token-input" placeholder="Bearer 토큰을 입력하세요..." rows="8"></textarea>
+            <div class="modal-buttons">
+                <button id="save-token-btn" class="primary-btn">저장</button>
+                <button id="cancel-token-btn" class="secondary-btn">취소</button>
+                <button id="clear-token-btn" class="danger-btn">토큰 삭제</button>
+            </div>
+            <p class="token-status" id="token-status"></p>
+        </div>
+    </div>
+
+    <script type="module" src="lostark-app.js"></script>
 </body>
+
 </html>
