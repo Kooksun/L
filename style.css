@@ -245,6 +245,19 @@ header h1 {
     gap: 1rem;
 }
 
+.list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.drag-hint {
+    color: #b2bec3;
+    font-size: 0.9rem;
+}
+
 .character-card {
     background: var(--input-bg);
     border: 2px solid var(--border-color);
@@ -252,12 +265,39 @@ header h1 {
     padding: 1.5rem;
     transition: all 0.3s ease;
     animation: fadeIn 0.4s ease-in-out;
+    position: relative;
 }
 
 .character-card:hover {
     border-color: var(--primary-color);
     transform: translateY(-4px);
     box-shadow: 0 8px 20px rgba(162, 155, 254, 0.2);
+}
+
+.draggable-card {
+    cursor: grab;
+}
+
+.draggable-card:active {
+    cursor: grabbing;
+}
+
+.character-card.dragging {
+    opacity: 0.65;
+    border-color: var(--secondary-color);
+    box-shadow: 0 12px 25px rgba(108, 92, 231, 0.35);
+}
+
+.order-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    color: #dfe6e9;
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border-radius: 999px;
 }
 
 @keyframes fadeIn {
@@ -486,4 +526,43 @@ header h1 {
 
 .no-results {
     border-color: var(--border-color);
+}
+
+/* 기타 그룹 */
+.misc-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.misc-group-card {
+    background: var(--input-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.misc-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    gap: 1rem;
+}
+
+.misc-group-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.misc-group-meta {
+    color: #b2bec3;
+    font-size: 0.9rem;
+}
+
+.danger-btn.small {
+    padding: 6px 10px;
+    font-size: 0.8rem;
 }

@@ -1,21 +1,60 @@
 import { RTDB_BASE_URL } from './firebase-config.js';
 
+// ItemAvgLevel 문자열을 숫자로 변환
+function parseItemLevel(levelValue) {
+    const levelStr = String(levelValue ?? '').replace(/,/g, '');
+    const match = levelStr.match(/^\d+\.?\d*/);
+    return match ? parseFloat(match[0]) : 0;
+}
+
 // 대표 캐릭터 선정 (ItemAvgLevel 기준 최고 레벨)
 function selectRepresentativeCharacter(characters) {
     if (!characters || characters.length === 0) {
         return null;
     }
 
-    // ItemAvgLevel을 숫자로 변환하여 비교 (쉼표 제거 후 숫자 부분만 추출)
-    const sorted = [...characters].sort((a, b) => {
-        const levelStrA = String(a.ItemAvgLevel).replace(/,/g, '');
-        const levelStrB = String(b.ItemAvgLevel).replace(/,/g, '');
-        const levelA = parseFloat(levelStrA.match(/^\d+\.?\d*/)?.[0]) || 0;
-        const levelB = parseFloat(levelStrB.match(/^\d+\.?\d*/)?.[0]) || 0;
-        return levelB - levelA; // 내림차순
-    });
-
+    const sorted = [...characters].sort((a, b) => parseItemLevel(b.ItemAvgLevel) - parseItemLevel(a.ItemAvgLevel));
     return sorted[0];
+}
+
+// 표시 순서를 부여하며 정리
+function normalizeCharactersForSave(characters) {
+    const sortedByLevel = [...characters].sort((a, b) => parseItemLevel(b.ItemAvgLevel) - parseItemLevel(a.ItemAvgLevel));
+
+    return sortedByLevel.map((char, index) => {
+        const { ItemMaxLevel, ...rest } = char;
+        return {
+            ...rest,
+            displayOrder: index
+        };
+    });
+}
+
+// 저장/조회 시 표시 순서가 없으면 레벨 기준으로 보정
+function sortCharactersForDisplay(characters) {
+    if (!Array.isArray(characters)) {
+        return [];
+    }
+
+    const withOrder = characters.map((char, index) => ({
+        ...char,
+        _level: parseItemLevel(char.ItemAvgLevel),
+        displayOrder: Number.isFinite(char.displayOrder) ? char.displayOrder : null,
+        _fallbackIndex: index
+    }));
+
+    const hasMissingOrder = withOrder.some(char => char.displayOrder === null);
+
+    if (hasMissingOrder) {
+        withOrder.sort((a, b) => b._level - a._level || a._fallbackIndex - b._fallbackIndex);
+        withOrder.forEach((char, idx) => {
+            char.displayOrder = idx;
+        });
+    } else {
+        withOrder.sort((a, b) => a.displayOrder - b.displayOrder);
+    }
+
+    return withOrder.map(({ _level, _fallbackIndex, ...rest }) => rest);
 }
 
 // 캐릭터 그룹 저장
@@ -26,7 +65,7 @@ async function saveCharacterGroup(characters) {
 
     // 레벨 1000 미만 캐릭터 필터링
     const filteredCharacters = characters.filter(char => {
-        const level = parseFloat(String(char.ItemAvgLevel).replace(/,/g, '')) || 0;
+        const level = parseItemLevel(char.ItemAvgLevel);
         return level >= 1000;
     });
 
@@ -37,11 +76,8 @@ async function saveCharacterGroup(characters) {
     const representative = selectRepresentativeCharacter(filteredCharacters);
     const representativeName = representative.CharacterName;
 
-    // ItemMaxLevel 제거 (사용자 요청)
-    const cleanedCharacters = filteredCharacters.map(char => {
-        const { ItemMaxLevel, ...rest } = char;
-        return rest;
-    });
+    // 표시 순서가 포함된 정리된 데이터 (ItemMaxLevel 제거 포함)
+    const cleanedCharacters = normalizeCharactersForSave(filteredCharacters);
 
     const groupData = {
         representativeName: representativeName,
@@ -94,7 +130,8 @@ async function getAllCharacterGroups() {
         // 객체를 배열로 변환
         const groups = Object.keys(data).map(key => ({
             groupId: key,
-            ...data[key]
+            ...data[key],
+            characters: sortCharactersForDisplay(data[key].characters)
         }));
 
         // 최신순으로 정렬
@@ -124,7 +161,8 @@ async function getCharacterGroup(groupId) {
 
         return {
             groupId: groupId,
-            ...data
+            ...data,
+            characters: sortCharactersForDisplay(data.characters)
         };
     } catch (error) {
         console.error('캐릭터 그룹 조회 실패:', error);
@@ -151,10 +189,34 @@ async function deleteCharacterGroup(groupId) {
     }
 }
 
+// 캐릭터 순서 업데이트
+async function updateCharacterOrder(groupId, characters) {
+    try {
+        const response = await fetch(`${RTDB_BASE_URL}/${groupId}.json`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ characters })
+        });
+
+        if (!response.ok) {
+            throw new Error(`순서 저장 실패: ${response.status}`);
+        }
+
+        console.log('캐릭터 순서 업데이트 완료:', groupId);
+        return true;
+    } catch (error) {
+        console.error('캐릭터 순서 업데이트 실패:', error);
+        throw error;
+    }
+}
+
 export {
     selectRepresentativeCharacter,
     saveCharacterGroup,
     getAllCharacterGroups,
     getCharacterGroup,
-    deleteCharacterGroup
+    deleteCharacterGroup,
+    updateCharacterOrder
 };

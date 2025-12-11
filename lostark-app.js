@@ -1,6 +1,6 @@
 import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './lostark-api.js';
 import { TEST_TOKEN } from './test-token.js';
-import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup } from './character-storage.js';
+import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder } from './character-storage.js';
 
 const characterInput = document.getElementById('character-input');
 const searchBtn = document.getElementById('search-btn');
@@ -70,18 +70,34 @@ function renderTabs() {
         return;
     }
 
-    const tabsHtml = allGroups.map(group => `
-        <div class="tab ${currentGroupId === group.groupId ? 'active' : ''}" 
-             data-group-id="${group.groupId}">
-            <span class="tab-name">${group.representativeName}</span>
-            <button class="tab-delete-btn" data-group-id="${group.groupId}" title="삭제">×</button>
-        </div>
-    `).join('');
+    const { mainGroups, miscGroups } = getGroupBuckets();
+
+    const tabsHtml = [
+        ...mainGroups.map(group => `
+            <div class="tab ${currentGroupId === group.groupId ? 'active' : ''}" 
+                 data-group-id="${group.groupId}">
+                <span class="tab-name">${group.representativeName}</span>
+                <button class="tab-delete-btn" data-group-id="${group.groupId}" title="삭제">×</button>
+            </div>
+        `),
+        ...(miscGroups.length ? [`
+            <div class="tab ${currentGroupId === 'misc' ? 'active' : ''}" data-group-id="misc">
+                <span class="tab-name">기타 (${miscGroups.length})</span>
+            </div>
+        `] : [])
+    ].join('');
 
     tabsContainer.innerHTML = tabsHtml;
 
     // 이벤트 위임 방식으로 한 번만 등록
     setupTabEvents();
+}
+
+// 그룹 버킷
+function getGroupBuckets() {
+    const mainGroups = allGroups.filter(g => (g.characters?.length || 0) > 6);
+    const miscGroups = allGroups.filter(g => (g.characters?.length || 0) <= 6);
+    return { mainGroups, miscGroups };
 }
 
 // 탭 이벤트 설정 (한 번만 호출)
@@ -113,20 +129,25 @@ function setupTabEvents() {
 
 // 그룹 선택
 function selectGroup(groupId) {
-    currentGroupId = groupId;
-    const group = allGroups.find(g => g.groupId === groupId);
+    const { mainGroups, miscGroups } = getGroupBuckets();
+    const group = mainGroups.find(g => g.groupId === groupId);
+    const isMiscGroup = miscGroups.some(g => g.groupId === groupId) || groupId === 'misc';
+
+    currentGroupId = group ? groupId : (isMiscGroup ? 'misc' : groupId);
+
+    // 활성 탭 CSS만 업데이트 (renderTabs 호출하지 않음)
+    document.querySelectorAll('.tab').forEach(tab => {
+        if (tab.dataset.groupId === currentGroupId) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
 
     if (group) {
-        // 활성 탭 CSS만 업데이트 (renderTabs 호출하지 않음)
-        document.querySelectorAll('.tab').forEach(tab => {
-            if (tab.dataset.groupId === groupId) {
-                tab.classList.add('active');
-            } else {
-                tab.classList.remove('active');
-            }
-        });
-
         displayCharacters(group);
+    } else if (isMiscGroup) {
+        displayMiscGroups(miscGroups);
     }
 }
 
@@ -194,17 +215,29 @@ async function handleDeleteGroup(groupId) {
         // 로컬 배열에서 제거
         allGroups = allGroups.filter(g => g.groupId !== groupId);
 
+        renderTabs();
+        const { mainGroups, miscGroups } = getGroupBuckets();
+
         // 삭제된 그룹이 현재 선택된 그룹이면 다른 그룹 선택
         if (currentGroupId === groupId) {
             currentGroupId = null;
             resultContainer.innerHTML = '';
 
-            if (allGroups.length > 0) {
-                selectGroup(allGroups[0].groupId);
+            if (mainGroups.length > 0) {
+                selectGroup(mainGroups[0].groupId);
+            } else if (miscGroups.length > 0) {
+                selectGroup('misc');
+            }
+        } else if (currentGroupId === 'misc') {
+            if (miscGroups.length > 0) {
+                selectGroup('misc');
+            } else if (mainGroups.length > 0) {
+                selectGroup(mainGroups[0].groupId);
+            } else {
+                resultContainer.innerHTML = '';
             }
         }
 
-        renderTabs();
         showToast('그룹이 삭제되었습니다.', 'success');
     } catch (error) {
         showToast('그룹 삭제에 실패했습니다.', 'error');
@@ -213,35 +246,88 @@ async function handleDeleteGroup(groupId) {
 
 // 캐릭터 표시
 function displayCharacters(group) {
-    const characters = group.characters;
+    const characters = getCharactersInDisplayOrder(group.characters || []);
 
     const html = `
         <div class="character-list">
-            <h2>🎭 ${group.representativeName}의 형제 캐릭터 (${characters.length}개)</h2>
-            <div class="characters-grid">
-                ${characters.map(char => `
-                    <div class="character-card">
-                        <div class="character-header">
-                            <h3>${char.CharacterName}</h3>
-                            <span class="server-badge">${char.ServerName}</span>
-                        </div>
-                        <div class="character-info">
-                            <div class="info-row">
-                                <span class="label">직업:</span>
-                                <span class="value">${char.CharacterClassName}</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="label">레벨:</span>
-                                <span class="value level">${char.ItemAvgLevel}</span>
-                            </div>
-                        </div>
-                    </div>
-                `).join('')}
+            <div class="list-header">
+                <h2>🎭 ${group.representativeName}의 캐릭터 (${characters.length}개)</h2>
+                <div class="drag-hint">카드를 드래그해서 순서를 변경하세요</div>
+            </div>
+            <div class="characters-grid" data-group-id="${group.groupId}">
+                ${buildCharacterCards(characters, { enableDrag: true })}
             </div>
         </div>
     `;
 
     resultContainer.innerHTML = html;
+    setupDragAndDrop(group.groupId);
+}
+
+// 기타 그룹 표시 (6개 이하 그룹 모음)
+function displayMiscGroups(miscGroups) {
+    if (!miscGroups || miscGroups.length === 0) {
+        resultContainer.innerHTML = '<p class="no-results">표시할 기타 그룹이 없습니다.</p>';
+        return;
+    }
+
+    const html = `
+        <div class="misc-groups">
+            <h2>🗂 기타 그룹 (${miscGroups.length}개)</h2>
+            ${miscGroups.map(group => `
+                <div class="misc-group-card">
+                    <div class="misc-group-header">
+                        <div>
+                            <div class="misc-group-name">${group.representativeName}</div>
+                            <div class="misc-group-meta">${group.characters?.length || 0} 캐릭터</div>
+                        </div>
+                        <button class="danger-btn small group-delete-btn" data-group-id="${group.groupId}">삭제</button>
+                    </div>
+                    <div class="characters-grid">
+                        ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    resultContainer.innerHTML = html;
+
+    resultContainer.querySelectorAll('.group-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await handleDeleteGroup(btn.dataset.groupId);
+        });
+    });
+}
+
+// 캐릭터 카드 HTML 생성
+function buildCharacterCards(characters, options = {}) {
+    const { enableDrag = false } = options;
+
+    return characters.map(char => `
+        <div class="character-card ${enableDrag ? 'draggable-card' : ''}" 
+             ${enableDrag ? 'draggable="true"' : ''} 
+             data-character-key="${getCharacterKey(char)}"
+             data-display-order="${char.displayOrder ?? 0}">
+            <div class="order-badge">#${(char.displayOrder ?? 0) + 1}</div>
+            <div class="character-header">
+                <h3>${char.CharacterName}</h3>
+                <span class="server-badge">${char.ServerName}</span>
+            </div>
+            <div class="character-info">
+                <div class="info-row">
+                    <span class="label">직업:</span>
+                    <span class="value">${char.CharacterClassName}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">레벨:</span>
+                    <span class="value level">${char.ItemAvgLevel}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
 }
 
 // 토큰 상태 업데이트
@@ -368,6 +454,112 @@ function displayError(message) {
             </button>
         </div>
     `;
+}
+
+// 캐릭터 키 생성 (이름 + 서버)
+function getCharacterKey(char) {
+    return `${char.CharacterName || ''}__${char.ServerName || ''}`;
+}
+
+// 화면 표시 순서 정렬
+function getCharactersInDisplayOrder(characters) {
+    return [...(characters || [])].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+}
+
+// 드래그 앤 드롭 설정
+function setupDragAndDrop(groupId) {
+    const grid = resultContainer.querySelector('.characters-grid');
+    if (!grid) return;
+
+    let dragActive = null;
+
+    grid.addEventListener('dragstart', (e) => {
+        const card = e.target.closest('.character-card');
+        if (!card) return;
+        dragActive = card;
+        card.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', '');
+        e.dataTransfer.effectAllowed = 'move';
+    });
+
+    grid.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const draggingCard = grid.querySelector('.dragging');
+        if (!draggingCard) return;
+
+        const afterElement = getDragAfterElement(grid, e.clientY);
+        if (!afterElement) {
+            grid.appendChild(draggingCard);
+        } else {
+            grid.insertBefore(draggingCard, afterElement);
+        }
+    });
+
+    grid.addEventListener('drop', (e) => {
+        e.preventDefault();
+    });
+
+    grid.addEventListener('dragend', async () => {
+        if (!dragActive) return;
+        dragActive.classList.remove('dragging');
+        dragActive = null;
+
+        const cards = Array.from(grid.querySelectorAll('.character-card'));
+        await persistCharacterOrder(groupId, cards);
+    });
+}
+
+function getDragAfterElement(container, y) {
+    const cards = [...container.querySelectorAll('.character-card:not(.dragging)')];
+
+    return cards.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+
+        if (offset < 0 && offset > closest.offset) {
+            return { offset, element: child };
+        }
+
+        return closest;
+    }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+async function persistCharacterOrder(groupId, cards) {
+    const groupIndex = allGroups.findIndex(g => g.groupId === groupId);
+    if (groupIndex === -1) return;
+
+    const targetGroup = allGroups[groupIndex];
+    const characterMap = new Map((targetGroup.characters || []).map(char => [getCharacterKey(char), char]));
+
+    cards.forEach((card, index) => {
+        card.dataset.displayOrder = index;
+        const badge = card.querySelector('.order-badge');
+        if (badge) {
+            badge.textContent = `#${index + 1}`;
+        }
+    });
+
+    const reorderedCharacters = cards.map((card, index) => {
+        const key = card.dataset.characterKey;
+        const original = characterMap.get(key) || {};
+        return {
+            ...original,
+            displayOrder: index
+        };
+    });
+
+    allGroups[groupIndex] = {
+        ...targetGroup,
+        characters: reorderedCharacters
+    };
+
+    try {
+        await updateCharacterOrder(groupId, reorderedCharacters);
+        showToast('순서를 저장했습니다.');
+    } catch (error) {
+        console.error('순서 저장 실패:', error);
+        showToast('순서 저장에 실패했습니다.', 'error');
+    }
 }
 
 // 로딩 표시
