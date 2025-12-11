@@ -2,8 +2,6 @@ import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './l
 import { TEST_TOKEN } from './test-token.js';
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder } from './character-storage.js';
 
-const characterInput = document.getElementById('character-input');
-const searchBtn = document.getElementById('search-btn');
 const resultContainer = document.getElementById('result-container');
 const dateDisplay = document.getElementById('date-display');
 const loadingSpinner = document.getElementById('loading');
@@ -22,6 +20,13 @@ const confirmModal = document.getElementById('confirm-modal');
 const confirmMessage = document.getElementById('confirm-message');
 const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
 const confirmOkBtn = document.getElementById('confirm-ok-btn');
+
+// 그룹 추가 모달 관련
+const addGroupBtn = document.getElementById('add-group-btn');
+const addGroupModal = document.getElementById('add-group-modal');
+const addGroupInput = document.getElementById('add-group-input');
+const addGroupConfirmBtn = document.getElementById('add-group-confirm-btn');
+const addGroupCancelBtn = document.getElementById('add-group-cancel-btn');
 
 // 현재 선택된 그룹
 let currentGroupId = null;
@@ -106,8 +111,34 @@ function setupTabEvents() {
     if (tabEventsSetup) return;
     tabEventsSetup = true;
 
+    let longPressTimer = null;
+    let longPressTriggered = false;
+    const LONG_PRESS_MS = 700;
+
+    const clearLongPress = () => {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    };
+
+    const startLongPress = (tab) => {
+        if (!tab || tab.dataset.groupId === 'misc') return;
+        longPressTriggered = false;
+        clearLongPress();
+        longPressTimer = setTimeout(() => {
+            longPressTriggered = true;
+            refreshGroupData(tab.dataset.groupId);
+        }, LONG_PRESS_MS);
+    };
+
     // 이벤트 위임: tabsContainer에 한 번만 등록
     tabsContainer.addEventListener('click', async (e) => {
+        if (longPressTriggered) {
+            longPressTriggered = false;
+            return;
+        }
+
         // 삭제 버튼 클릭
         if (e.target.classList.contains('tab-delete-btn')) {
             e.preventDefault();
@@ -125,6 +156,22 @@ function setupTabEvents() {
             selectGroup(groupId);
         }
     });
+
+    tabsContainer.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('tab-delete-btn')) return;
+        const tab = e.target.closest('.tab');
+        startLongPress(tab);
+    });
+
+    tabsContainer.addEventListener('mouseup', clearLongPress);
+    tabsContainer.addEventListener('mouseleave', clearLongPress);
+    tabsContainer.addEventListener('touchstart', (e) => {
+        if (e.target.classList.contains('tab-delete-btn')) return;
+        const tab = e.target.closest('.tab');
+        startLongPress(tab);
+    }, { passive: true });
+    tabsContainer.addEventListener('touchend', clearLongPress);
+    tabsContainer.addEventListener('touchcancel', clearLongPress);
 }
 
 // 그룹 선택
@@ -385,21 +432,40 @@ clearTokenBtn.addEventListener('click', () => {
     }
 });
 
-// 검색 이벤트
-searchBtn.addEventListener('click', () => {
-    const characterName = characterInput.value.trim();
-    if (characterName) {
-        searchCharacter(characterName);
+// 그룹 추가 모달
+function openAddGroupModal() {
+    addGroupModal.style.display = 'flex';
+    addGroupInput.value = '';
+    addGroupInput.focus();
+}
+
+function closeAddGroupModal() {
+    addGroupModal.style.display = 'none';
+}
+
+addGroupBtn.addEventListener('click', openAddGroupModal);
+addGroupCancelBtn.addEventListener('click', closeAddGroupModal);
+
+addGroupModal.addEventListener('click', (e) => {
+    if (e.target === addGroupModal) {
+        closeAddGroupModal();
     }
 });
 
-characterInput.addEventListener('keypress', (e) => {
+addGroupInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
-        const characterName = characterInput.value.trim();
-        if (characterName) {
-            searchCharacter(characterName);
-        }
+        addGroupConfirmBtn.click();
     }
+});
+
+addGroupConfirmBtn.addEventListener('click', () => {
+    const characterName = addGroupInput.value.trim();
+    if (!characterName) {
+        alert('캐릭터 이름을 입력해주세요.');
+        return;
+    }
+    closeAddGroupModal();
+    searchCharacter(characterName);
 });
 
 // 캐릭터 검색 함수
@@ -429,9 +495,6 @@ async function searchCharacter(characterName) {
 
         // 새로 추가된 그룹 선택
         selectGroup(savedGroup.groupId);
-
-        // 입력 필드 초기화
-        characterInput.value = '';
 
         alert(`"${savedGroup.representativeName}" 그룹이 저장되었습니다!`);
 
@@ -559,6 +622,79 @@ async function persistCharacterOrder(groupId, cards) {
     } catch (error) {
         console.error('순서 저장 실패:', error);
         showToast('순서 저장에 실패했습니다.', 'error');
+    }
+}
+
+function parseItemLevelValue(level) {
+    const levelStr = String(level ?? '').replace(/,/g, '');
+    const match = levelStr.match(/^\d+\.?\d*/);
+    return match ? parseFloat(match[0]) : 0;
+}
+
+function mergeCharactersPreserveOrder(existing, incoming) {
+    const filteredIncoming = (incoming || []).filter(char => parseItemLevelValue(char.ItemAvgLevel) >= 1000);
+    const cleanedIncoming = filteredIncoming.map(char => {
+        const { ItemMaxLevel, ...rest } = char;
+        return rest;
+    });
+
+    const incomingMap = new Map(cleanedIncoming.map(char => [getCharacterKey(char), char]));
+    const sortedExisting = [...(existing || [])].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+    const merged = [];
+
+    sortedExisting.forEach((oldChar) => {
+        const key = getCharacterKey(oldChar);
+        if (!incomingMap.has(key)) return;
+        const nextChar = incomingMap.get(key);
+        merged.push({ ...nextChar, displayOrder: merged.length });
+        incomingMap.delete(key);
+    });
+
+    const remaining = Array.from(incomingMap.values())
+        .sort((a, b) => parseItemLevelValue(b.ItemAvgLevel) - parseItemLevelValue(a.ItemAvgLevel));
+
+    remaining.forEach((char) => {
+        merged.push({ ...char, displayOrder: merged.length });
+    });
+
+    return merged;
+}
+
+async function refreshGroupData(groupId) {
+    const targetGroup = allGroups.find(g => g.groupId === groupId);
+    if (!targetGroup) return;
+
+    showLoading(true);
+    try {
+        showToast('최신 정보 불러오는 중...');
+        const siblings = await getCharacterSiblings(targetGroup.representativeName);
+
+        if (!siblings || siblings.length === 0) {
+            showToast('캐릭터 정보를 불러올 수 없습니다.', 'error');
+            return;
+        }
+
+        const mergedCharacters = mergeCharactersPreserveOrder(targetGroup.characters || [], siblings);
+
+        allGroups = allGroups.map(group => {
+            if (group.groupId !== groupId) return group;
+            return {
+                ...group,
+                characters: mergedCharacters
+            };
+        });
+
+        await updateCharacterOrder(groupId, mergedCharacters);
+
+        renderTabs();
+        selectGroup(currentGroupId || groupId);
+        showToast('최신 정보로 갱신했습니다.');
+    } catch (error) {
+        console.error('그룹 갱신 실패:', error);
+        showToast('갱신에 실패했습니다.', 'error');
+    } finally {
+        showLoading(false);
     }
 }
 

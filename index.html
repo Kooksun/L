@@ -14,21 +14,13 @@
 <body>
     <div class="container">
         <header>
-            <h1>🎮 로스트아크 캐릭터 조회</h1>
+            <h1>🎮 로스트아크</h1>
             <p id="date-display"></p>
-            <button id="token-settings-btn" class="settings-btn">⚙️ API 토큰 설정</button>
+            <div class="header-actions">
+                <button id="add-group-btn" class="primary-btn ghost">➕ 그룹 추가</button>
+                <button id="token-settings-btn" class="settings-btn">⚙️ API 토큰 설정</button>
+            </div>
         </header>
-
-        <section class="input-section">
-            <input type="text" id="character-input" placeholder="캐릭터 이름을 입력하세요..." autocomplete="off">
-            <button id="search-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-            </button>
-        </section>
 
         <div class="loading-spinner" id="loading">불러오는 중...</div>
 
@@ -42,6 +34,19 @@
         </div>
     </div>
     <div id="toast" class="toast" aria-live="polite"></div>
+
+    <!-- 그룹 추가 모달 -->
+    <div id="add-group-modal" class="modal">
+        <div class="modal-content">
+            <h2>그룹 추가</h2>
+            <p>조회할 대표 캐릭터 이름을 입력하세요.</p>
+            <input id="add-group-input" type="text" placeholder="예: 캐릭터명을 입력하세요" autocomplete="off">
+            <div class="modal-buttons">
+                <button id="add-group-confirm-btn" class="primary-btn">추가</button>
+                <button id="add-group-cancel-btn" class="secondary-btn">취소</button>
+            </div>
+        </div>
+    </div>
 
     <!-- 토큰 입력 모달 -->
     <div id="token-modal" class="modal">

@@ -46,6 +46,12 @@ header {
     gap: 1rem;
 }
 
+.header-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
 header h1 {
     font-size: 2rem;
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
@@ -416,6 +422,23 @@ header h1 {
     border-color: var(--primary-color);
 }
 
+#add-group-input {
+    width: 100%;
+    padding: 12px;
+    background: var(--input-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-color);
+    font-size: 1rem;
+    margin-bottom: 1rem;
+}
+
+#add-group-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(162, 155, 254, 0.1);
+}
+
 .modal-buttons {
     display: flex;
     gap: 10px;
@@ -438,6 +461,13 @@ header h1 {
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     color: white;
     flex: 1;
+}
+
+.primary-btn.ghost {
+    background: rgba(162, 155, 254, 0.15);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    flex: none;
 }
 
 .primary-btn:hover {
