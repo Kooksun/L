@@ -837,13 +837,13 @@ function closeMiscSettingsModal() {
 
 function renderMiscSettingsList() {
     if (!miscSettingsList) return;
-    const { miscGroups } = getGroupBuckets();
-    if (!miscGroups.length) {
-        miscSettingsList.innerHTML = '<p class="no-results">기타 원정대가 없습니다.</p>';
+    const groups = allGroups || [];
+    if (!groups.length) {
+        miscSettingsList.innerHTML = '<p class="no-results">저장된 원정대가 없습니다.</p>';
         return;
     }
 
-    miscSettingsList.innerHTML = miscGroups.map(group => `
+    miscSettingsList.innerHTML = groups.map(group => `
         <div class="misc-settings-item">
             <div>
                 <div class="misc-settings-name">${group.representativeName || '대표캐릭터'}</div>
@@ -871,8 +871,7 @@ function renderMiscSettingsList() {
             e.stopPropagation();
             await handleDeleteGroup(btn.dataset.groupId);
             renderTabs();
-            const { miscGroups: latestMisc } = getGroupBuckets();
-            if (!latestMisc.length) {
+            if (!allGroups.length) {
                 closeMiscSettingsModal();
             } else {
                 renderMiscSettingsList();
@@ -970,8 +969,8 @@ function displayMiscGroups(miscGroups) {
 
     const html = `
         <div class="misc-groups">
-            ${miscGroups.map(group => `
-                <div class="misc-group-card">
+            ${miscGroups.map((group, index) => `
+                <div class="misc-group-row">
                     ${buildExpeditionTodoBlock(group.groupId, {
                         representativeName: group.representativeName
                     })}
@@ -979,6 +978,7 @@ function displayMiscGroups(miscGroups) {
                         ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
                     </div>
                 </div>
+                ${index < miscGroups.length - 1 ? '<div class="misc-group-divider"></div>' : ''}
             `).join('')}
         </div>
     `;
