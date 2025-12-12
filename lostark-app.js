@@ -39,6 +39,9 @@ const expeditionTodoTypeSelect = document.getElementById('expedition-todo-type')
 const expeditionTodoTargetInput = document.getElementById('expedition-todo-target');
 const expeditionTodoAddBtn = document.getElementById('expedition-todo-add-btn');
 const expeditionTodoList = document.getElementById('expedition-todo-list');
+const miscSettingsModal = document.getElementById('misc-settings-modal');
+const miscSettingsList = document.getElementById('misc-settings-list');
+const miscSettingsCloseBtn = document.getElementById('misc-settings-close-btn');
 
 // 캐릭터 TODO 선택 모달 관련
 const characterTodoModal = document.getElementById('character-todo-modal');
@@ -65,6 +68,7 @@ let expeditionTodoState = {};
 let activeTodoSelectionTarget = null;
 let cachedTestToken = null;
 let testTokenChecked = false;
+let miscSettingsBackdropHandler = null;
 
 // 날짜 표시
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -413,6 +417,7 @@ function renderTabs() {
             <div class="tab ${currentGroupId === 'misc' ? 'active' : ''}" data-group-id="misc">
                 <span class="tab-name">기타 (${miscGroups.length})</span>
             </div>
+            <button class="misc-settings-trigger" title="기타 원정대 관리">⚙️</button>
         `] : [])
     ].join('');
 
@@ -453,7 +458,7 @@ function attachTodoCheckboxHandlers(scope) {
 
 function updateTodoGroupMeta(block) {
     if (!block) return;
-    const meta = block.querySelector('.todo-group-title .meta');
+    const meta = block.querySelector('.todo-group-title .meta, .todo-group-meta');
     if (!meta) return;
 
     const items = block.querySelectorAll('.todo-item-row');
@@ -706,6 +711,14 @@ function setupTabEvents() {
             return;
         }
 
+        const miscSettingsBtn = e.target.closest('.misc-settings-trigger');
+        if (miscSettingsBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            openMiscSettingsModal();
+            return;
+        }
+
         // 삭제 버튼 클릭
         if (e.target.classList.contains('tab-delete-btn')) {
             e.preventDefault();
@@ -725,7 +738,7 @@ function setupTabEvents() {
     });
 
     tabsContainer.addEventListener('mousedown', (e) => {
-        if (e.target.classList.contains('tab-delete-btn')) return;
+        if (e.target.classList.contains('tab-delete-btn') || e.target.closest('.misc-settings-trigger')) return;
         const tab = e.target.closest('.tab');
         startLongPress(tab);
     });
@@ -813,6 +826,73 @@ function showToast(message, type = 'success') {
     }, 2000);
 }
 
+function closeMiscSettingsModal() {
+    if (!miscSettingsModal) return;
+    miscSettingsModal.style.display = 'none';
+    if (miscSettingsBackdropHandler) {
+        miscSettingsModal.removeEventListener('click', miscSettingsBackdropHandler);
+        miscSettingsBackdropHandler = null;
+    }
+}
+
+function renderMiscSettingsList() {
+    if (!miscSettingsList) return;
+    const { miscGroups } = getGroupBuckets();
+    if (!miscGroups.length) {
+        miscSettingsList.innerHTML = '<p class="no-results">기타 원정대가 없습니다.</p>';
+        return;
+    }
+
+    miscSettingsList.innerHTML = miscGroups.map(group => `
+        <div class="misc-settings-item">
+            <div>
+                <div class="misc-settings-name">${group.representativeName || '대표캐릭터'}</div>
+                <div class="misc-settings-meta">${group.characters?.length || 0}캐릭터</div>
+            </div>
+            <div class="todo-manager-actions-inline">
+                <button class="secondary-btn xs misc-refresh-btn" data-group-id="${group.groupId}">갱신</button>
+                <button class="danger-btn small group-delete-btn" data-group-id="${group.groupId}">삭제</button>
+            </div>
+        </div>
+    `).join('');
+
+    miscSettingsList.querySelectorAll('.misc-refresh-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await refreshGroupData(btn.dataset.groupId);
+            renderMiscSettingsList();
+        });
+    });
+
+    miscSettingsList.querySelectorAll('.group-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await handleDeleteGroup(btn.dataset.groupId);
+            renderTabs();
+            const { miscGroups: latestMisc } = getGroupBuckets();
+            if (!latestMisc.length) {
+                closeMiscSettingsModal();
+            } else {
+                renderMiscSettingsList();
+            }
+        });
+    });
+}
+
+function openMiscSettingsModal() {
+    if (!miscSettingsModal) return;
+    renderMiscSettingsList();
+    miscSettingsModal.style.display = 'flex';
+    miscSettingsBackdropHandler = (e) => {
+        if (e.target === miscSettingsModal) {
+            closeMiscSettingsModal();
+        }
+    };
+    miscSettingsModal.addEventListener('click', miscSettingsBackdropHandler);
+}
+
 function safeDomId(value, fallback = 'item') {
     const cleaned = String(value ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
     return cleaned || fallback;
@@ -892,17 +972,9 @@ function displayMiscGroups(miscGroups) {
         <div class="misc-groups">
             ${miscGroups.map(group => `
                 <div class="misc-group-card">
-                    <div class="misc-group-header">
-                        <div>
-                            <div class="misc-group-name">${group.representativeName}</div>
-                            <div class="misc-group-meta">${group.characters?.length || 0} 캐릭터</div>
-                        </div>
-                        <div class="todo-manager-actions-inline">
-                            <button class="secondary-btn xs misc-refresh-btn" data-group-id="${group.groupId}">갱신</button>
-                            <button class="danger-btn small group-delete-btn" data-group-id="${group.groupId}">삭제</button>
-                        </div>
-                    </div>
-                    ${buildExpeditionTodoBlock(group.groupId)}
+                    ${buildExpeditionTodoBlock(group.groupId, {
+                        representativeName: group.representativeName
+                    })}
                     <div class="characters-grid">
                         ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
                     </div>
@@ -961,14 +1033,17 @@ function getTodoGroupsForCard(char) {
     }];
 }
 
-function buildExpeditionTodoBlock(groupId) {
+function buildExpeditionTodoBlock(groupId, options = {}) {
+    const { representativeName } = options;
+    const inlineName = representativeName || '';
+    const headingText = inlineName ? `${inlineName} 원정대 숙제` : '원정대 숙제';
     const items = expeditionTodoItems || [];
     if (!items.length) {
         return `
-            <div class="todo-group-block">
-                <div class="todo-group-title">
-                    <span>원정대 TODO</span>
-                    <span class="meta" data-total="0" data-checked="0">0/0개</span>
+            <div class="todo-group-block expedition-block">
+                <div class="expedition-heading">
+                    <span class="expedition-heading-text">${headingText}</span>
+                    <span class="meta todo-group-meta" data-total="0" data-checked="0">0/0개</span>
                 </div>
                 <div class="todo-empty">등록된 원정대 TODO가 없습니다.</div>
             </div>
@@ -1012,9 +1087,9 @@ function buildExpeditionTodoBlock(groupId) {
 
     return `
         <div class="todo-group-block expedition-block" data-group-id="${groupId}">
-            <div class="todo-group-title">
-                <span>원정대 TODO</span>
-                <span class="meta" data-total="${completableCount}" data-checked="0">0/${completableCount}개</span>
+            <div class="expedition-heading">
+                <span class="expedition-heading-text">${headingText}</span>
+                <span class="meta todo-group-meta" data-total="${completableCount}" data-checked="0">0/${completableCount}개</span>
             </div>
             <ul class="todo-list expedition-inline-list">
                 ${listHtml}
@@ -1205,6 +1280,9 @@ expeditionTodoModal?.addEventListener('click', (e) => {
         closeExpeditionTodoModal();
     }
 });
+
+// 기타 원정대 설정 모달
+miscSettingsCloseBtn?.addEventListener('click', closeMiscSettingsModal);
 
 function openCharacterTodoModal(charKey, characterName) {
     activeTodoSelectionTarget = { charKey, characterName };
