@@ -995,8 +995,8 @@ header h1 {
 }
 
 .expedition-inline-list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 0.5rem;
 }
 
@@ -1009,7 +1009,6 @@ header h1 {
     border-radius: 8px;
     width: 100%;
     background: rgba(255, 255, 255, 0.03);
-    flex: 0 0 auto;
 }
 
 .expedition-inline-list li:not(.counter-row) {

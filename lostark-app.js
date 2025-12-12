@@ -1665,7 +1665,11 @@ function setupDragAndDrop(groupId) {
 
     grid.addEventListener('dragstart', (e) => {
         const handle = e.target.closest('.drag-handle');
-        if (!handle) return;
+        if (!handle) {
+            // Block drag starts from non-handle areas so clicks on checkboxes/labels don't trigger card lift.
+            e.preventDefault();
+            return;
+        }
         const card = handle.closest('.character-card');
         if (!card) return;
         const rect = card.getBoundingClientRect();
