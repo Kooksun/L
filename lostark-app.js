@@ -2,7 +2,9 @@ import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './l
 import { TEST_TOKEN } from './test-token.js';
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder } from './character-storage.js';
 import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders } from './todo-storage.js';
+import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders } from './expedition-todo-storage.js';
 import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter } from './character-todo-selection.js';
+import { fetchExpeditionTodoState, saveExpeditionTodoCompletion } from './expedition-todo-state.js';
 
 const resultContainer = document.getElementById('result-container');
 const dateDisplay = document.getElementById('date-display');
@@ -24,12 +26,18 @@ const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
 const confirmOkBtn = document.getElementById('confirm-ok-btn');
 
 // TODO 관리 모달 관련
-const todoManageBtn = document.getElementById('todo-manage-btn');
+const todoManageBtn = document.getElementById('character-todo-manage-btn');
 const todoModal = document.getElementById('todo-modal');
 const todoModalCloseBtn = document.getElementById('todo-modal-close-btn');
 const todoGroupInput = document.getElementById('todo-group-input');
 const todoGroupAddBtn = document.getElementById('todo-group-add-btn');
 const todoManagerList = document.getElementById('todo-manager-list');
+const expeditionTodoManageBtn = document.getElementById('expedition-todo-manage-btn');
+const expeditionTodoModal = document.getElementById('expedition-todo-modal');
+const expeditionTodoModalCloseBtn = document.getElementById('expedition-todo-modal-close-btn');
+const expeditionTodoInput = document.getElementById('expedition-todo-input');
+const expeditionTodoAddBtn = document.getElementById('expedition-todo-add-btn');
+const expeditionTodoList = document.getElementById('expedition-todo-list');
 
 // 캐릭터 TODO 선택 모달 관련
 const characterTodoModal = document.getElementById('character-todo-modal');
@@ -51,6 +59,8 @@ let currentGroupId = null;
 let allGroups = [];
 let todoGroups = [];
 let characterTodoState = {};
+let expeditionTodoItems = [];
+let expeditionTodoState = {};
 let activeTodoSelectionTarget = null;
 
 // 날짜 표시
@@ -67,8 +77,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateTokenStatus();
     }
 
-    // 저장된 TODO/그룹/캐릭터 TODO 상태 불러오기
-    await Promise.all([loadTodoCatalog(), loadCharacterTodoState()]);
+    // 저장된 TODO/그룹/캐릭터 TODO 상태/원정대 TODO 불러오기
+    await Promise.all([
+        loadTodoCatalog(),
+        loadCharacterTodoState(),
+        loadExpeditionTodoCatalog(),
+        loadExpeditionTodoState()
+    ]);
     await loadAllGroups();
 });
 
@@ -86,6 +101,19 @@ async function loadTodoCatalog() {
     }
 }
 
+async function loadExpeditionTodoCatalog() {
+    try {
+        expeditionTodoItems = await getExpeditionTodoItems();
+        renderExpeditionTodoList();
+        rerenderCurrentCardsWithTodos();
+    } catch (error) {
+        console.error('원정대 TODO 목록 불러오기 실패:', error);
+        expeditionTodoItems = [];
+        renderExpeditionTodoList();
+        showToast('원정대 TODO 목록을 불러오지 못했습니다.', 'error');
+    }
+}
+
 async function loadCharacterTodoState() {
     try {
         characterTodoState = await fetchAllCharacterTodoState();
@@ -94,6 +122,17 @@ async function loadCharacterTodoState() {
         console.error('캐릭터 TODO 상태 불러오기 실패:', error);
         characterTodoState = {};
         showToast('캐릭터 TODO 상태를 불러오지 못했습니다.', 'error');
+    }
+}
+
+async function loadExpeditionTodoState() {
+    try {
+        expeditionTodoState = await fetchExpeditionTodoState();
+        rerenderCurrentCardsWithTodos();
+    } catch (error) {
+        console.error('원정대 TODO 상태 불러오기 실패:', error);
+        expeditionTodoState = {};
+        showToast('원정대 TODO 상태를 불러오지 못했습니다.', 'error');
     }
 }
 
@@ -159,6 +198,32 @@ function renderTodoManagerList() {
     `).join('');
 }
 
+function renderExpeditionTodoList() {
+    if (!expeditionTodoList) return;
+
+    if (!expeditionTodoItems.length) {
+        expeditionTodoList.innerHTML = '<div class="todo-manager-empty">등록된 원정대 TODO가 없습니다. 위 입력란에서 추가하세요.</div>';
+        return;
+    }
+
+    expeditionTodoList.innerHTML = `
+        <div class="todo-manager-card">
+            <ul class="todo-manager-item-list">
+                ${expeditionTodoItems.map((item, idx) => `
+                    <li data-item-id="${item.itemId}">
+                        <span>${item.name}</span>
+                        <div class="todo-manager-actions-inline">
+                            <button class="secondary-btn xs expedition-item-move-btn" data-direction="up" data-item-id="${item.itemId}">▲</button>
+                            <button class="secondary-btn xs expedition-item-move-btn" data-direction="down" data-item-id="${item.itemId}">▼</button>
+                            <button class="secondary-btn xs expedition-item-delete-btn" data-item-id="${item.itemId}">삭제</button>
+                        </div>
+                    </li>
+                `).join('')}
+            </ul>
+        </div>
+    `;
+}
+
 function getSelectedGroupIdsForCharacter(charKey) {
     const entry = characterTodoState[charKey];
     if (!entry) return null; // null => 모든 그룹 표시
@@ -168,6 +233,11 @@ function getSelectedGroupIdsForCharacter(charKey) {
 function isTodoCompletedForCharacter(charKey, groupId, itemId) {
     const completed = characterTodoState[charKey]?.completed || {};
     return Boolean(completed[groupId]?.[itemId]);
+}
+
+function isExpeditionTodoCompleted(groupId, itemId) {
+    const completed = expeditionTodoState[groupId]?.completed || {};
+    return Boolean(completed[itemId]);
 }
 
 function setTodoCompletionInState(charKey, groupId, itemId, isCompleted) {
@@ -180,6 +250,19 @@ function setTodoCompletionInState(charKey, groupId, itemId, isCompleted) {
         ...characterTodoState,
         [charKey]: {
             selectedGroups: Array.isArray(prevEntry.selectedGroups) ? prevEntry.selectedGroups : null,
+            completed: nextCompleted
+        }
+    };
+}
+
+function setExpeditionTodoCompletionInState(groupId, itemId, isCompleted) {
+    const prevEntry = expeditionTodoState[groupId] || {};
+    const nextCompleted = { ...(prevEntry.completed || {}) };
+    nextCompleted[itemId] = isCompleted;
+
+    expeditionTodoState = {
+        ...expeditionTodoState,
+        [groupId]: {
             completed: nextCompleted
         }
     };
@@ -361,6 +444,36 @@ async function persistTodoItemOrders(groupId, items) {
         order: idx
     }));
     await updateTodoItemOrders(groupId, orderEntries);
+}
+
+async function moveExpeditionTodoItem(itemId, direction) {
+    const index = expeditionTodoItems.findIndex(item => item.itemId === itemId);
+    if (index === -1) return;
+
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= expeditionTodoItems.length) return;
+
+    const clone = [...expeditionTodoItems];
+    [clone[index], clone[swapIndex]] = [clone[swapIndex], clone[index]];
+    const prevState = expeditionTodoItems;
+    expeditionTodoItems = clone;
+    renderExpeditionTodoList();
+    rerenderCurrentCardsWithTodos();
+
+    try {
+        const orderEntries = expeditionTodoItems.map((item, idx) => ({
+            itemId: item.itemId,
+            order: idx
+        }));
+        await updateExpeditionTodoOrders(orderEntries);
+        showToast('원정대 TODO 순서를 저장했습니다.');
+    } catch (error) {
+        console.error('원정대 TODO 순서 저장 실패:', error);
+        expeditionTodoItems = prevState;
+        renderExpeditionTodoList();
+        rerenderCurrentCardsWithTodos();
+        showToast('원정대 TODO 순서 저장에 실패했습니다.', 'error');
+    }
 }
 
 // 탭 이벤트 설정 (한 번만 호출)
@@ -560,6 +673,7 @@ function displayCharacters(group) {
 
     const html = `
         <div class="character-list">
+            ${buildExpeditionTodoBlock(group.groupId)}
             <div class="characters-grid" data-group-id="${group.groupId}">
                 ${buildCharacterCards(characters, { enableDrag: true })}
             </div>
@@ -592,6 +706,7 @@ function displayMiscGroups(miscGroups) {
                             <button class="danger-btn small group-delete-btn" data-group-id="${group.groupId}">삭제</button>
                         </div>
                     </div>
+                    ${buildExpeditionTodoBlock(group.groupId)}
                     <div class="characters-grid">
                         ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
                     </div>
@@ -648,6 +763,45 @@ function getTodoGroupsForCard(char) {
             name
         }))
     }];
+}
+
+function buildExpeditionTodoBlock(groupId) {
+    const items = expeditionTodoItems || [];
+    if (!items.length) {
+        return `
+            <div class="todo-group-block">
+                <div class="todo-group-title">
+                    <span>원정대 TODO</span>
+                    <span class="meta" data-total="0" data-checked="0">0/0개</span>
+                </div>
+                <div class="todo-empty">등록된 원정대 TODO가 없습니다.</div>
+            </div>
+        `;
+    }
+
+    const listHtml = items.map((item, index) => {
+        const itemId = item.itemId ?? index;
+        const checkboxId = `expedition-${safeDomId(groupId, 'group')}-${safeDomId(itemId, `item-${index}`)}`;
+        const isChecked = isExpeditionTodoCompleted(groupId, itemId);
+        return `
+            <li>
+                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}" ${isChecked ? 'checked' : ''}>
+                <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
+            </li>
+        `;
+    }).join('');
+
+    return `
+        <div class="todo-group-block expedition-block" data-group-id="${groupId}">
+            <div class="todo-group-title">
+                <span>원정대 TODO</span>
+                <span class="meta" data-total="${items.length}" data-checked="0">0/${items.length}개</span>
+            </div>
+            <ul class="todo-list expedition-inline-list">
+                ${listHtml}
+            </ul>
+        </div>
+    `;
 }
 
 // 캐릭터 카드 HTML 생성
@@ -790,6 +944,25 @@ todoModal.addEventListener('click', (e) => {
     }
 });
 
+// 원정대 TODO 관리 모달
+function openExpeditionTodoModal() {
+    expeditionTodoModal.style.display = 'flex';
+    renderExpeditionTodoList();
+    loadExpeditionTodoCatalog();
+}
+
+function closeExpeditionTodoModal() {
+    expeditionTodoModal.style.display = 'none';
+}
+
+expeditionTodoManageBtn?.addEventListener('click', openExpeditionTodoModal);
+expeditionTodoModalCloseBtn?.addEventListener('click', closeExpeditionTodoModal);
+expeditionTodoModal?.addEventListener('click', (e) => {
+    if (e.target === expeditionTodoModal) {
+        closeExpeditionTodoModal();
+    }
+});
+
 function openCharacterTodoModal(charKey, characterName) {
     activeTodoSelectionTarget = { charKey, characterName };
     renderCharacterTodoSelectionList(charKey, characterName);
@@ -857,12 +1030,28 @@ resultContainer.addEventListener('change', async (e) => {
     const checkbox = e.target.closest('.todo-checkbox');
     if (!checkbox) return;
 
-    const { characterKey, groupId, itemId } = checkbox.dataset;
-    if (!characterKey || !groupId || !itemId) return;
+    const { characterKey, groupId, itemId, expedition } = checkbox.dataset;
+    if (!groupId || !itemId) return;
 
-    const previousValue = isTodoCompletedForCharacter(characterKey, groupId, itemId);
     const nextValue = checkbox.checked;
 
+    if (expedition === 'true') {
+        const previousValue = isExpeditionTodoCompleted(groupId, itemId);
+        try {
+            await saveExpeditionTodoCompletion(groupId, itemId, nextValue);
+            setExpeditionTodoCompletionInState(groupId, itemId, nextValue);
+        } catch (error) {
+            console.error('원정대 TODO 완료 상태 저장 실패:', error);
+            checkbox.checked = previousValue;
+            updateTodoGroupMeta(checkbox.closest('.todo-group-block'));
+            showToast('원정대 TODO 상태 저장에 실패했습니다.', 'error');
+        }
+        return;
+    }
+
+    if (!characterKey) return;
+
+    const previousValue = isTodoCompletedForCharacter(characterKey, groupId, itemId);
     try {
         await saveTodoCompletionForCharacter(characterKey, groupId, itemId, nextValue);
         setTodoCompletionInState(characterKey, groupId, itemId, nextValue);
@@ -998,6 +1187,55 @@ todoManagerList.addEventListener('click', async (e) => {
             console.error('TODO 그룹 삭제 실패:', error);
             showToast('그룹 삭제에 실패했습니다.', 'error');
         }
+    }
+});
+
+expeditionTodoAddBtn?.addEventListener('click', async () => {
+    const name = expeditionTodoInput.value.trim();
+    if (!name) {
+        showToast('원정대 TODO 내용을 입력하세요.', 'error');
+        return;
+    }
+
+    expeditionTodoAddBtn.disabled = true;
+    try {
+        const newItem = await addExpeditionTodoItem(name, expeditionTodoItems.length);
+        expeditionTodoItems = [...expeditionTodoItems, newItem];
+        expeditionTodoInput.value = '';
+        renderExpeditionTodoList();
+        rerenderCurrentCardsWithTodos();
+        showToast('원정대 TODO를 추가했습니다.');
+    } catch (error) {
+        console.error('원정대 TODO 추가 실패:', error);
+        showToast('원정대 TODO 추가에 실패했습니다.', 'error');
+    } finally {
+        expeditionTodoAddBtn.disabled = false;
+    }
+});
+
+expeditionTodoList?.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.expedition-item-delete-btn');
+    if (deleteBtn) {
+        const { itemId } = deleteBtn.dataset;
+        const confirmed = await showConfirmModal('이 원정대 TODO를 삭제하시겠습니까?');
+        if (!confirmed) return;
+        try {
+            await deleteExpeditionTodoItem(itemId);
+            expeditionTodoItems = expeditionTodoItems.filter(item => item.itemId !== itemId);
+            renderExpeditionTodoList();
+            rerenderCurrentCardsWithTodos();
+            showToast('원정대 TODO를 삭제했습니다.');
+        } catch (error) {
+            console.error('원정대 TODO 삭제 실패:', error);
+            showToast('원정대 TODO 삭제에 실패했습니다.', 'error');
+        }
+        return;
+    }
+
+    const moveBtn = e.target.closest('.expedition-item-move-btn');
+    if (moveBtn) {
+        const { itemId, direction } = moveBtn.dataset;
+        await moveExpeditionTodoItem(itemId, direction);
     }
 });
 

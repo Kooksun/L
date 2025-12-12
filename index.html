@@ -18,7 +18,8 @@
             <p id="date-display"></p>
             <div class="header-actions">
                 <button id="add-group-btn" class="settings-btn">🗂️ 그룹 추가</button>
-                <button id="todo-manage-btn" class="settings-btn">📝 TODO 관리</button>
+                <button id="character-todo-manage-btn" class="settings-btn">📝 캐릭터 TODO 관리</button>
+                <button id="expedition-todo-manage-btn" class="settings-btn">🛡️ 원정대 TODO 관리</button>
                 <button id="token-settings-btn" class="settings-btn">⚙️ API 토큰 설정</button>
             </div>
         </header>
@@ -76,13 +77,13 @@
         </div>
     </div>
 
-    <!-- TODO 관리 모달 -->
+    <!-- 캐릭터 TODO 관리 모달 -->
     <div id="todo-modal" class="modal">
         <div class="modal-content wide">
             <div class="modal-header">
                 <div>
-                    <h2>TODO 관리</h2>
-                    <p>레이드/던전 등 반복 체크할 항목을 그룹별로 정리해 보관합니다.</p>
+                    <h2>캐릭터 TODO 관리</h2>
+                    <p>캐릭터별로 선택할 TODO 그룹을 생성/관리합니다.</p>
                 </div>
                 <button id="todo-modal-close-btn" class="secondary-btn">닫기</button>
             </div>
@@ -93,6 +94,28 @@
                 </div>
                 <div id="todo-manager-list" class="todo-manager-list">
                     <!-- 그룹과 항목이 동적으로 렌더링됩니다 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 원정대 TODO 관리 모달 -->
+    <div id="expedition-todo-modal" class="modal">
+        <div class="modal-content wide">
+            <div class="modal-header">
+                <div>
+                    <h2>원정대 TODO 관리</h2>
+                    <p>원정대(그룹) 단위로 처리할 공통 TODO를 관리합니다.</p>
+                </div>
+                <button id="expedition-todo-modal-close-btn" class="secondary-btn">닫기</button>
+            </div>
+            <div class="todo-manager">
+                <div class="todo-manager-actions">
+                    <input id="expedition-todo-input" type="text" placeholder="새 TODO (예: 일일 숙제 체크)">
+                    <button id="expedition-todo-add-btn" class="primary-btn">추가</button>
+                </div>
+                <div id="expedition-todo-list" class="todo-manager-list">
+                    <!-- 원정대 TODO 항목 렌더링 -->
                 </div>
             </div>
         </div>
