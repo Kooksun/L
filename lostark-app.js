@@ -35,6 +35,8 @@ const expeditionTodoManageBtn = document.getElementById('expedition-todo-manage-
 const expeditionTodoModal = document.getElementById('expedition-todo-modal');
 const expeditionTodoModalCloseBtn = document.getElementById('expedition-todo-modal-close-btn');
 const expeditionTodoInput = document.getElementById('expedition-todo-input');
+const expeditionTodoTypeSelect = document.getElementById('expedition-todo-type');
+const expeditionTodoTargetInput = document.getElementById('expedition-todo-target');
 const expeditionTodoAddBtn = document.getElementById('expedition-todo-add-btn');
 const expeditionTodoList = document.getElementById('expedition-todo-list');
 
@@ -184,19 +186,34 @@ function renderTodoManagerList() {
                 </div>
             </div>
             <ul class="todo-manager-item-list">
-                ${(group.items || []).length ? group.items.map(item => `
-                    <li data-item-id="${item.itemId}">
-                        <span>${item.name}</span>
+                ${(group.items || []).length ? group.items.map(item => {
+                    const type = resolveTodoType(item);
+                    const targetCount = resolveTargetCount(item);
+                    const badgeLabel = type === 'counter'
+                        ? (targetCount ? `카운트${targetCount}회` : '카운트∞')
+                        : '체크';
+                    return `
+                    <li data-item-id="${item.itemId}" class="todo-manager-row">
+                        <div class="todo-manager-item-meta">
+                            <span class="todo-badge ${type}">${badgeLabel}</span>
+                            <span class="todo-item-name">${item.name}</span>
+                        </div>
                         <div class="todo-manager-actions-inline">
                             <button class="secondary-btn xs todo-item-move-btn" data-direction="up" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▲</button>
                             <button class="secondary-btn xs todo-item-move-btn" data-direction="down" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▼</button>
                             <button class="secondary-btn xs todo-item-delete-btn" data-group-id="${group.groupId}" data-item-id="${item.itemId}">삭제</button>
                         </div>
                     </li>
-                `).join('') : '<li class="todo-manager-empty">항목이 없습니다.</li>'}
+                `;
+                }).join('') : '<li class="todo-manager-empty">항목이 없습니다.</li>'}
             </ul>
             <div class="todo-add-row">
                 <input type="text" id="todo-item-input-${group.groupId}" data-group-id="${group.groupId}" placeholder="항목 추가 (예: 천상)">
+                <select class="todo-item-type-select" id="todo-item-type-${group.groupId}" data-group-id="${group.groupId}">
+                    <option value="check">체크</option>
+                    <option value="counter">카운터</option>
+                </select>
+                <input type="number" class="todo-item-target-input" id="todo-item-target-${group.groupId}" data-group-id="${group.groupId}" placeholder="목표(선택)" min="1" step="1">
                 <button class="primary-btn todo-item-add-btn" data-group-id="${group.groupId}">추가</button>
             </div>
         </div>
@@ -214,16 +231,26 @@ function renderExpeditionTodoList() {
     expeditionTodoList.innerHTML = `
         <div class="todo-manager-card">
             <ul class="todo-manager-item-list">
-                ${expeditionTodoItems.map((item, idx) => `
-                    <li data-item-id="${item.itemId}">
-                        <span>${item.name}</span>
+                ${expeditionTodoItems.map((item, idx) => {
+                    const type = resolveTodoType(item);
+                    const targetCount = resolveTargetCount(item);
+                    const badgeLabel = type === 'counter'
+                        ? (targetCount ? `카운트${targetCount}회` : '카운트∞')
+                        : '체크';
+                    return `
+                    <li data-item-id="${item.itemId}" class="todo-manager-row">
+                        <div class="todo-manager-item-meta">
+                            <span class="todo-badge ${type}">${badgeLabel}</span>
+                            <span class="todo-item-name">${item.name}</span>
+                        </div>
                         <div class="todo-manager-actions-inline">
                             <button class="secondary-btn xs expedition-item-move-btn" data-direction="up" data-item-id="${item.itemId}">▲</button>
                             <button class="secondary-btn xs expedition-item-move-btn" data-direction="down" data-item-id="${item.itemId}">▼</button>
                             <button class="secondary-btn xs expedition-item-delete-btn" data-item-id="${item.itemId}">삭제</button>
                         </div>
                     </li>
-                `).join('')}
+                `;
+                }).join('')}
             </ul>
         </div>
     `;
@@ -235,14 +262,59 @@ function getSelectedGroupIdsForCharacter(charKey) {
     return Array.isArray(entry.selectedGroups) ? entry.selectedGroups : null;
 }
 
-function isTodoCompletedForCharacter(charKey, groupId, itemId) {
-    const completed = characterTodoState[charKey]?.completed || {};
-    return Boolean(completed[groupId]?.[itemId]);
+function resolveTodoType(item = {}) {
+    return item?.type === 'counter' ? 'counter' : 'check';
 }
 
-function isExpeditionTodoCompleted(groupId, itemId) {
+function resolveTargetCount(item = {}) {
+    const parsed = Number(item?.targetCount);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getTodoValueFromState(state, groupId, itemId) {
+    const container = groupId == null ? state : state?.[groupId];
+    const value = container?.[itemId];
+    if (typeof value === 'number') return value;
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+    return value ? 1 : 0;
+}
+
+function getTodoValueForCharacter(charKey, groupId, itemId) {
+    const completed = characterTodoState[charKey]?.completed || {};
+    return getTodoValueFromState(completed, groupId, itemId);
+}
+
+function getExpeditionTodoValue(groupId, itemId) {
     const completed = expeditionTodoState[groupId]?.completed || {};
-    return Boolean(completed[itemId]);
+    return getTodoValueFromState(completed, null, itemId);
+}
+
+function getTargetCountFromDataset(targetValue) {
+    const parsed = Number(targetValue);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function renderCounterProgressHtml(targetCount, value) {
+    const safeValue = Math.max(0, value || 0);
+    if (!Number.isFinite(targetCount) || targetCount <= 0) {
+        return `<span class="counter-count plain">${safeValue}회</span>`;
+    }
+    const filledCount = Math.min(safeValue, targetCount);
+    return Array.from({ length: targetCount }, (_, idx) => `
+        <span class="counter-segment ${idx < filledCount ? 'filled' : ''}"></span>
+    `).join('');
+}
+
+function isTodoItemCompletable(type, targetCount) {
+    if (type === 'check') return true;
+    return Number.isFinite(targetCount) && targetCount > 0;
+}
+
+function isTodoItemCompleted(type, targetCount, value) {
+    if (type === 'check') return Boolean(value);
+    if (!Number.isFinite(targetCount)) return false;
+    return value >= targetCount;
 }
 
 async function loadOptionalTestToken() {
@@ -258,11 +330,11 @@ async function loadOptionalTestToken() {
     return cachedTestToken;
 }
 
-function setTodoCompletionInState(charKey, groupId, itemId, isCompleted) {
+function setTodoCompletionInState(charKey, groupId, itemId, value) {
     const prevEntry = characterTodoState[charKey] || {};
     const nextCompleted = { ...(prevEntry.completed || {}) };
     nextCompleted[groupId] = { ...(nextCompleted[groupId] || {}) };
-    nextCompleted[groupId][itemId] = isCompleted;
+    nextCompleted[groupId][itemId] = value;
 
     characterTodoState = {
         ...characterTodoState,
@@ -273,10 +345,10 @@ function setTodoCompletionInState(charKey, groupId, itemId, isCompleted) {
     };
 }
 
-function setExpeditionTodoCompletionInState(groupId, itemId, isCompleted) {
+function setExpeditionTodoCompletionInState(groupId, itemId, value) {
     const prevEntry = expeditionTodoState[groupId] || {};
     const nextCompleted = { ...(prevEntry.completed || {}) };
-    nextCompleted[itemId] = isCompleted;
+    nextCompleted[itemId] = value;
 
     expeditionTodoState = {
         ...expeditionTodoState,
@@ -382,13 +454,119 @@ function attachTodoCheckboxHandlers(scope) {
 function updateTodoGroupMeta(block) {
     if (!block) return;
     const meta = block.querySelector('.todo-group-title .meta');
-    const checkboxes = block.querySelectorAll('.todo-checkbox');
     if (!meta) return;
 
-    const total = Number(meta.dataset.total || checkboxes.length || 0);
-    const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
-    meta.dataset.checked = checked;
-    meta.textContent = `${checked}/${total}개`;
+    const items = block.querySelectorAll('.todo-item-row');
+    let total = 0;
+    let completed = 0;
+
+    items.forEach(item => {
+        const type = item.dataset.type === 'counter' ? 'counter' : 'check';
+        const targetRaw = Number(item.dataset.target);
+        const targetCount = Number.isFinite(targetRaw) && targetRaw > 0 ? targetRaw : null;
+        let value = Number(item.dataset.value);
+
+        if (type === 'check') {
+            const checkbox = item.querySelector('.todo-checkbox');
+            value = checkbox?.checked ? 1 : 0;
+            item.dataset.value = value;
+        } else if (!Number.isFinite(value) || value < 0) {
+            value = 0;
+            item.dataset.value = 0;
+        }
+
+        const completable = isTodoItemCompletable(type, targetCount);
+        const isCompleted = isTodoItemCompleted(type, targetCount, value);
+        item.dataset.completable = completable ? 'true' : 'false';
+        item.dataset.completed = isCompleted ? 'true' : 'false';
+
+        if (type === 'counter') {
+            syncCounterRowUI(item, value);
+        }
+
+        if (completable) {
+            total += 1;
+            if (isCompleted) completed += 1;
+        }
+    });
+
+    meta.dataset.total = total;
+    meta.dataset.checked = completed;
+    meta.textContent = `${completed}/${total}개`;
+}
+
+function parseCounterValue(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return Math.floor(parsed);
+}
+
+function syncCounterRowUI(row, nextValue) {
+    if (!row) return;
+    const checkbox = row.querySelector('.todo-checkbox');
+    const progress = row.querySelector('.counter-progress');
+    const type = row.dataset.type === 'counter' ? 'counter' : 'check';
+    const targetCount = getTargetCountFromDataset(row.dataset.target);
+    const value = parseCounterValue(nextValue);
+    const isCompleted = isTodoItemCompleted(type, targetCount, value);
+    const shouldCheck = type === 'counter' && !Number.isFinite(targetCount)
+        ? value > 0
+        : isCompleted;
+
+    row.dataset.value = value;
+    row.dataset.completed = isCompleted ? 'true' : 'false';
+
+    if (checkbox) {
+        checkbox.checked = shouldCheck;
+    }
+
+    if (progress) {
+        progress.innerHTML = renderCounterProgressHtml(targetCount, value);
+    }
+}
+
+async function persistCounterValue(sourceEl, nextValue) {
+    const row = sourceEl?.classList?.contains?.('todo-item-row') ? sourceEl : sourceEl?.closest?.('.todo-item-row');
+    if (!row) return;
+    const dataSource = row.dataset && Object.keys(row.dataset).length ? row.dataset : (sourceEl?.dataset || {});
+    const targetValue = parseCounterValue(nextValue);
+    const { expedition, characterKey, groupId, itemId } = dataSource;
+    if (!groupId || !itemId) {
+        console.warn('[counter-persist-missing-ids]', { expedition, characterKey, groupId, itemId, dataSource, row });
+        return;
+    }
+    const block = row.closest('.todo-group-block');
+
+    if (expedition === 'true') {
+        const previousValue = getExpeditionTodoValue(groupId, itemId);
+        try {
+            await saveExpeditionTodoCompletion(groupId, itemId, targetValue);
+            setExpeditionTodoCompletionInState(groupId, itemId, targetValue);
+            syncCounterRowUI(row, targetValue);
+            updateTodoGroupMeta(block);
+        } catch (error) {
+            console.error('원정대 TODO 상태 저장 실패:', error);
+            syncCounterRowUI(row, previousValue);
+            updateTodoGroupMeta(block);
+            showToast('원정대 TODO 상태 저장에 실패했습니다.', 'error');
+        }
+        return;
+    }
+
+    if (!characterKey) return;
+
+    const previousValue = getTodoValueForCharacter(characterKey, groupId, itemId);
+    try {
+        await saveTodoCompletionForCharacter(characterKey, groupId, itemId, targetValue);
+        setTodoCompletionInState(characterKey, groupId, itemId, targetValue);
+        syncCounterRowUI(row, targetValue);
+        updateTodoGroupMeta(block);
+    } catch (error) {
+        console.error('TODO 완료 상태 저장 실패:', error);
+        syncCounterRowUI(row, previousValue);
+        updateTodoGroupMeta(block);
+        showToast('완료 상태 저장에 실패했습니다.', 'error');
+    }
 }
 
 async function moveTodoGroup(groupId, direction) {
@@ -797,13 +975,36 @@ function buildExpeditionTodoBlock(groupId) {
         `;
     }
 
+    const completableCount = items.filter(item => isTodoItemCompletable(resolveTodoType(item), resolveTargetCount(item))).length;
+
     const listHtml = items.map((item, index) => {
         const itemId = item.itemId ?? index;
-        const checkboxId = `expedition-${safeDomId(groupId, 'group')}-${safeDomId(itemId, `item-${index}`)}`;
-        const isChecked = isExpeditionTodoCompleted(groupId, itemId);
+        const type = resolveTodoType(item);
+        const targetCount = resolveTargetCount(item);
+        const value = getExpeditionTodoValue(groupId, itemId);
+        const isCompletable = isTodoItemCompletable(type, targetCount);
+        const isCompleted = isTodoItemCompleted(type, targetCount, value);
+        const itemIdSafe = safeDomId(itemId, `item-${index}`);
+
+        if (type === 'counter') {
+            const checkboxId = `expedition-${safeDomId(groupId, 'group')}-${itemIdSafe}`;
+            return `
+                <li class="todo-item-row counter-row" data-type="counter" data-target="${targetCount ?? ''}" data-value="${value}" data-completable="${isCompletable}" data-completed="${isCompleted}" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}">
+                    <div class="todo-check">
+                        <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}" ${isCompleted ? 'checked' : ''}>
+                        <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
+                    </div>
+                    <div class="counter-progress ${targetCount ? '' : 'unbounded'}" data-target="${targetCount ?? ''}">
+                        ${renderCounterProgressHtml(targetCount, value)}
+                    </div>
+                </li>
+            `;
+        }
+
+        const checkboxId = `expedition-${safeDomId(groupId, 'group')}-${itemIdSafe}`;
         return `
-            <li>
-                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}" ${isChecked ? 'checked' : ''}>
+            <li class="todo-item-row" data-type="check" data-target="" data-value="${value}" data-completable="true" data-completed="${isCompleted}" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}">
+                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}" ${isCompleted ? 'checked' : ''}>
                 <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
             </li>
         `;
@@ -813,7 +1014,7 @@ function buildExpeditionTodoBlock(groupId) {
         <div class="todo-group-block expedition-block" data-group-id="${groupId}">
             <div class="todo-group-title">
                 <span>원정대 TODO</span>
-                <span class="meta" data-total="${items.length}" data-checked="0">0/${items.length}개</span>
+                <span class="meta" data-total="${completableCount}" data-checked="0">0/${completableCount}개</span>
             </div>
             <ul class="todo-list expedition-inline-list">
                 ${listHtml}
@@ -834,19 +1035,40 @@ function buildCharacterCards(characters, options = {}) {
             const items = (group.items || []).length
                 ? group.items.map((item, index) => {
                     const itemId = item.itemId ?? index;
+                    const type = resolveTodoType(item);
+                    const targetCount = resolveTargetCount(item);
+                    const value = getTodoValueForCharacter(charKey, group.groupId, itemId);
+                    const isCompletable = isTodoItemCompletable(type, targetCount);
+                    const isCompleted = isTodoItemCompleted(type, targetCount, value);
                     const itemIdSafe = safeDomId(itemId, `item-${index}`);
+                    const sharedAttrs = `data-group-id="${group.groupId}" data-item-id="${itemId}" data-character-key="${charKey}"`;
+
+                    if (type === 'counter') {
+                        const checkboxId = `todo-${safeDomId(charKey, 'char')}-${groupIdSafe}-${itemIdSafe}`;
+                        return `
+                            <li class="todo-item-row counter-row" data-type="counter" data-target="${targetCount ?? ''}" data-value="${value}" data-completable="${isCompletable}" data-completed="${isCompleted}" ${sharedAttrs}>
+                                <div class="todo-check">
+                                    <input type="checkbox" id="${checkboxId}" class="todo-checkbox" ${sharedAttrs} ${isCompleted ? 'checked' : ''}>
+                                    <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
+                                </div>
+                                <div class="counter-progress ${targetCount ? '' : 'unbounded'}" data-target="${targetCount ?? ''}">
+                                    ${renderCounterProgressHtml(targetCount, value)}
+                                </div>
+                            </li>
+                        `;
+                    }
+
                     const checkboxId = `todo-${safeDomId(charKey, 'char')}-${groupIdSafe}-${itemIdSafe}`;
-                    const isChecked = isTodoCompletedForCharacter(charKey, group.groupId, itemId);
                     return `
-                            <li>
-                                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-group-id="${group.groupId}" data-item-id="${itemId}" data-character-key="${charKey}" ${isChecked ? 'checked' : ''}>
+                            <li class="todo-item-row" data-type="check" data-target="" data-value="${value}" data-completable="true" data-completed="${isCompleted}" ${sharedAttrs}>
+                                <input type="checkbox" id="${checkboxId}" class="todo-checkbox" ${sharedAttrs} ${isCompleted ? 'checked' : ''}>
                                 <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
                             </li>
                         `;
                 }).join('')
                 : '<li class="todo-empty">등록된 항목이 없습니다.</li>';
 
-            const totalCount = group.items?.length || 0;
+            const totalCount = (group.items || []).filter(item => isTodoItemCompletable(resolveTodoType(item), resolveTargetCount(item))).length;
 
             return `
                     <div class="todo-group-block">
@@ -1052,36 +1274,68 @@ resultContainer.addEventListener('change', async (e) => {
     if (!checkbox) return;
 
     const { characterKey, groupId, itemId, expedition } = checkbox.dataset;
-    if (!groupId || !itemId) return;
+    const itemRow = checkbox.closest('.todo-item-row');
+    if (!itemRow) return;
+    const type = itemRow.dataset.type === 'counter' ? 'counter' : 'check';
+    if (type === 'counter') {
+        // 카운터형 체크박스는 클릭 핸들러에서 처리
+        checkbox.checked = !checkbox.checked;
+        return;
+    }
+    const targetCount = getTargetCountFromDataset(itemRow.dataset.target);
 
-    const nextValue = checkbox.checked;
-
-    if (expedition === 'true') {
-        const previousValue = isExpeditionTodoCompleted(groupId, itemId);
-        try {
-            await saveExpeditionTodoCompletion(groupId, itemId, nextValue);
-            setExpeditionTodoCompletionInState(groupId, itemId, nextValue);
-        } catch (error) {
-            console.error('원정대 TODO 완료 상태 저장 실패:', error);
-            checkbox.checked = previousValue;
-            updateTodoGroupMeta(checkbox.closest('.todo-group-block'));
-            showToast('원정대 TODO 상태 저장에 실패했습니다.', 'error');
+    let nextValue = checkbox.checked ? 1 : 0;
+    if (type === 'counter') {
+        if (Number.isFinite(targetCount)) {
+            nextValue = checkbox.checked ? targetCount : 0;
         }
+        console.log('[counter-checkbox-change]', {
+            groupId,
+            itemId,
+            expedition,
+            targetCount,
+            nextValue
+        });
+    }
+
+    await persistCounterValue(itemRow, nextValue);
+});
+
+resultContainer.addEventListener('click', async (e) => {
+    const checkArea = e.target.closest('.todo-check');
+    const row = checkArea?.closest('.todo-item-row');
+    if (row && row.dataset.type === 'counter') {
+        e.preventDefault();
+        const targetCount = getTargetCountFromDataset(row.dataset.target);
+        const currentValue = parseCounterValue(row.dataset.value);
+        let nextValue;
+        if (Number.isFinite(targetCount)) {
+            nextValue = isTodoItemCompleted('counter', targetCount, currentValue) ? 0 : targetCount;
+        } else {
+            nextValue = currentValue + 1;
+        }
+        console.log('[counter-click]', { groupId: row.dataset.groupId, itemId: row.dataset.itemId, targetCount, currentValue, nextValue });
+        await persistCounterValue(row, nextValue);
         return;
     }
 
-    if (!characterKey) return;
+    const progress = e.target.closest('.counter-progress');
+    if (!progress) return;
+    const progressRow = progress.closest('.todo-item-row');
+    if (!progressRow) return;
+    const targetCount = getTargetCountFromDataset(progressRow.dataset.target);
+    const currentValue = parseCounterValue(progressRow.dataset.value);
+    const nextValue = Number.isFinite(targetCount) ? Math.min(targetCount, currentValue + 1) : currentValue + 1;
+    await persistCounterValue(progressRow, nextValue);
+});
 
-    const previousValue = isTodoCompletedForCharacter(characterKey, groupId, itemId);
-    try {
-        await saveTodoCompletionForCharacter(characterKey, groupId, itemId, nextValue);
-        setTodoCompletionInState(characterKey, groupId, itemId, nextValue);
-    } catch (error) {
-        console.error('TODO 완료 상태 저장 실패:', error);
-        checkbox.checked = previousValue;
-        updateTodoGroupMeta(checkbox.closest('.todo-group-block'));
-        showToast('완료 상태 저장에 실패했습니다.', 'error');
-    }
+resultContainer.addEventListener('contextmenu', async (e) => {
+    const row = e.target.closest('.counter-row');
+    if (!row) return;
+    e.preventDefault();
+    const currentValue = parseCounterValue(row.dataset.value);
+    const nextValue = Math.max(0, currentValue - 1);
+    await persistCounterValue(row, nextValue);
 });
 
 resultContainer.addEventListener('click', (e) => {
@@ -1134,15 +1388,22 @@ todoManagerList.addEventListener('click', async (e) => {
             showToast('항목 이름을 입력하세요.', 'error');
             return;
         }
+        const typeSelect = document.getElementById(`todo-item-type-${groupId}`);
+        const targetInput = document.getElementById(`todo-item-target-${groupId}`);
+        const selectedType = typeSelect?.value === 'counter' ? 'counter' : 'check';
+        const parsedTarget = Number(targetInput?.value);
+        const targetCount = selectedType === 'counter' && Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : null;
 
         addBtn.disabled = true;
         try {
             const group = todoGroups.find(g => g.groupId === groupId);
-            const newItem = await addTodoItem(groupId, value, (group?.items?.length ?? 0));
+            const newItem = await addTodoItem(groupId, value, (group?.items?.length ?? 0), selectedType, targetCount);
             if (group) {
                 group.items = [...(group.items || []), newItem];
             }
             input.value = '';
+            if (typeSelect) typeSelect.value = 'check';
+            if (targetInput) targetInput.value = '';
             renderTodoManagerList();
             rerenderCurrentCardsWithTodos();
             showToast('항목을 추가했습니다.');
@@ -1217,12 +1478,17 @@ expeditionTodoAddBtn?.addEventListener('click', async () => {
         showToast('원정대 TODO 내용을 입력하세요.', 'error');
         return;
     }
+    const selectedType = expeditionTodoTypeSelect?.value === 'counter' ? 'counter' : 'check';
+    const parsedTarget = Number(expeditionTodoTargetInput?.value);
+    const targetCount = selectedType === 'counter' && Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : null;
 
     expeditionTodoAddBtn.disabled = true;
     try {
-        const newItem = await addExpeditionTodoItem(name, expeditionTodoItems.length);
+        const newItem = await addExpeditionTodoItem(name, expeditionTodoItems.length, selectedType, targetCount);
         expeditionTodoItems = [...expeditionTodoItems, newItem];
         expeditionTodoInput.value = '';
+        if (expeditionTodoTypeSelect) expeditionTodoTypeSelect.value = 'check';
+        if (expeditionTodoTargetInput) expeditionTodoTargetInput.value = '';
         renderExpeditionTodoList();
         rerenderCurrentCardsWithTodos();
         showToast('원정대 TODO를 추가했습니다.');

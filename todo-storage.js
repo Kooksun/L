@@ -7,7 +7,9 @@ function normalizeTodoItems(itemsObj) {
         itemId: key,
         name: itemsObj[key]?.name || '',
         createdAt: itemsObj[key]?.createdAt || null,
-        order: Number.isFinite(itemsObj[key]?.order) ? itemsObj[key].order : null
+        order: Number.isFinite(itemsObj[key]?.order) ? itemsObj[key].order : null,
+        type: itemsObj[key]?.type === 'counter' ? 'counter' : 'check',
+        targetCount: Number.isFinite(itemsObj[key]?.targetCount) ? Number(itemsObj[key].targetCount) : null
     })).sort((a, b) => {
         const aHasOrder = Number.isFinite(a.order);
         const bHasOrder = Number.isFinite(b.order);
@@ -100,11 +102,13 @@ async function deleteTodoGroup(groupId) {
     }
 }
 
-async function addTodoItem(groupId, itemName, order = null) {
+async function addTodoItem(groupId, itemName, order = null, type = 'check', targetCount = null) {
     const payload = {
         name: itemName,
         createdAt: new Date().toISOString(),
-        order: Number.isFinite(order) ? order : null
+        order: Number.isFinite(order) ? order : null,
+        type: type === 'counter' ? 'counter' : 'check',
+        targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null
     };
 
     const response = await fetch(`${TODO_BASE_URL}/${groupId}/items.json`, {

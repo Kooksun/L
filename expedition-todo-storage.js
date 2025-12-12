@@ -6,7 +6,9 @@ function normalizeItems(data) {
         itemId: key,
         name: data[key]?.name || '',
         createdAt: data[key]?.createdAt || null,
-        order: Number.isFinite(data[key]?.order) ? data[key].order : null
+        order: Number.isFinite(data[key]?.order) ? data[key].order : null,
+        type: data[key]?.type === 'counter' ? 'counter' : 'check',
+        targetCount: Number.isFinite(data[key]?.targetCount) ? Number(data[key].targetCount) : null
     })).sort((a, b) => {
         const aHasOrder = Number.isFinite(a.order);
         const bHasOrder = Number.isFinite(b.order);
@@ -28,11 +30,13 @@ async function getExpeditionTodoItems() {
     return normalizeItems(data);
 }
 
-async function addExpeditionTodoItem(name, order = null) {
+async function addExpeditionTodoItem(name, order = null, type = 'check', targetCount = null) {
     const payload = {
         name,
         createdAt: new Date().toISOString(),
-        order: Number.isFinite(order) ? order : null
+        order: Number.isFinite(order) ? order : null,
+        type: type === 'counter' ? 'counter' : 'check',
+        targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null
     };
     const response = await fetch(`${EXPEDITION_TODO_BASE_URL}.json`, {
         method: 'POST',

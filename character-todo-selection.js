@@ -68,19 +68,22 @@ async function clearTodoSelectionForCharacter(charKey) {
     return normalizeEntry(saved);
 }
 
-async function saveTodoCompletionForCharacter(charKey, groupId, itemId, isCompleted) {
+async function saveTodoCompletionForCharacter(charKey, groupId, itemId, value) {
+    const normalizedValue = typeof value === 'number'
+        ? Math.max(0, Math.floor(value))
+        : !!value;
     const url = `${CHARACTER_TODO_STATE_BASE_URL}/${encodeURIComponent(charKey)}/completed/${encodeURIComponent(groupId)}/${encodeURIComponent(itemId)}.json`;
     const response = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(!!isCompleted)
+        body: JSON.stringify(normalizedValue)
     });
 
     if (!response.ok) {
         throw new Error(`완료 상태 저장 실패: ${response.status}`);
     }
 
-    return !!isCompleted;
+    return normalizedValue;
 }
 
 export {

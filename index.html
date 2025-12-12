@@ -112,6 +112,11 @@
             <div class="todo-manager">
                 <div class="todo-manager-actions">
                     <input id="expedition-todo-input" type="text" placeholder="새 TODO (예: 일일 숙제 체크)">
+                    <select id="expedition-todo-type">
+                        <option value="check">체크</option>
+                        <option value="counter">카운터</option>
+                    </select>
+                    <input id="expedition-todo-target" type="number" min="1" step="1" placeholder="목표 횟수 (선택)">
                     <button id="expedition-todo-add-btn" class="primary-btn">추가</button>
                 </div>
                 <div id="expedition-todo-list" class="todo-manager-list">

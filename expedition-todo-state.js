@@ -23,17 +23,20 @@ async function fetchExpeditionTodoState() {
     }
 }
 
-async function saveExpeditionTodoCompletion(groupId, itemId, isCompleted) {
+async function saveExpeditionTodoCompletion(groupId, itemId, value) {
+    const normalizedValue = typeof value === 'number'
+        ? Math.max(0, Math.floor(value))
+        : !!value;
     const url = `${EXPEDITION_TODO_STATE_BASE_URL}/${encodeURIComponent(groupId)}/completed/${encodeURIComponent(itemId)}.json`;
     const response = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(!!isCompleted)
+        body: JSON.stringify(normalizedValue)
     });
     if (!response.ok) {
         throw new Error(`원정대 TODO 완료 상태 저장 실패: ${response.status}`);
     }
-    return !!isCompleted;
+    return normalizedValue;
 }
 
 export { fetchExpeditionTodoState, saveExpeditionTodoCompletion };

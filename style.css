@@ -419,11 +419,99 @@ header h1 {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+
+.counter-row {
+    align-items: center;
+}
+
+.todo-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
 }
 
 .todo-text {
     color: var(--text-color);
     font-size: 0.95rem;
+    word-break: keep-all;
+}
+
+.counter-progress {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.counter-progress.unbounded {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    border: none;
+    gap: 4px;
+}
+
+.counter-segment {
+    width: 16px;
+    height: 12px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-color);
+    transition: all 0.15s ease;
+}
+
+.counter-segment.filled {
+    background: var(--secondary-color);
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 1px rgba(108, 92, 231, 0.35);
+}
+
+.counter-count {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text-color);
+    padding: 0;
+    line-height: 1.2;
+}
+
+.counter-count.plain {
+    font-weight: 500;
+}
+
+.todo-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    border: 1px solid var(--border-color);
+    gap: 0.25rem;
+    width: fit-content;
+}
+
+.todo-badge.counter {
+    background: rgba(255, 193, 7, 0.1);
+    border-color: rgba(255, 193, 7, 0.5);
+    color: #ffd166;
+}
+
+.todo-badge.check {
+    background: rgba(76, 175, 80, 0.1);
+    border-color: rgba(76, 175, 80, 0.5);
+    color: #9be7a2;
+}
+
+.meta.sub {
+    color: #a6acb1;
+    font-size: 0.85rem;
 }
 
 .todo-checkbox {
@@ -771,6 +859,28 @@ header h1 {
     color: var(--text-color);
 }
 
+#expedition-todo-type,
+#expedition-todo-target,
+.todo-item-type-select,
+.todo-item-target-input {
+    padding: 12px;
+    background: var(--input-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-color);
+    min-width: 120px;
+}
+
+#expedition-todo-type,
+#expedition-todo-target {
+    flex: 0 0 auto;
+}
+
+#expedition-todo-target,
+.todo-item-target-input {
+    min-width: 120px;
+}
+
 #expedition-todo-add-btn {
     padding: 14px;
     font-size: 0.9rem;
@@ -834,6 +944,19 @@ header h1 {
     flex-shrink: 0;
 }
 
+.todo-manager-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.todo-item-name {
+    font-weight: 600;
+}
+
 .todo-manager-empty {
     color: #b2bec3;
     font-size: 0.95rem;
@@ -844,15 +967,25 @@ header h1 {
 .todo-add-row {
     display: flex;
     gap: 0.5rem;
+    flex-wrap: wrap;
 }
 
-.todo-add-row input {
+.todo-add-row input[type="text"] {
     flex: 4;
     padding: 10px 12px;
     background: var(--input-bg);
     border: 2px solid var(--border-color);
     border-radius: 8px;
     color: var(--text-color);
+}
+
+.todo-add-row input[type="number"] {
+    flex: 0 0 auto;
+    width: 120px;
+}
+
+.todo-item-type-select {
+    flex: 0 0 auto;
 }
 
 .secondary-btn.xs,
@@ -863,22 +996,24 @@ header h1 {
 
 .expedition-inline-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 0.5rem;
-    flex-direction: row;
 }
 
 .expedition-inline-list li {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 0.5rem;
     padding: 0.4rem 0.6rem;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    width: auto;
-    min-width: 220px;
+    width: 100%;
     background: rgba(255, 255, 255, 0.03);
     flex: 0 0 auto;
+}
+
+.expedition-inline-list li:not(.counter-row) {
+    align-items: center;
 }
 
 .todo-group-block {
