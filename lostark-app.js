@@ -1,5 +1,4 @@
 import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './lostark-api.js';
-import { TEST_TOKEN } from './test-token.js';
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder } from './character-storage.js';
 import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders } from './todo-storage.js';
 import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders } from './expedition-todo-storage.js';
@@ -62,6 +61,8 @@ let characterTodoState = {};
 let expeditionTodoItems = [];
 let expeditionTodoState = {};
 let activeTodoSelectionTarget = null;
+let cachedTestToken = null;
+let testTokenChecked = false;
 
 // 날짜 표시
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -70,12 +71,16 @@ dateDisplay.textContent = new Date().toLocaleDateString('ko-KR', options);
 // 초기화
 document.addEventListener('DOMContentLoaded', async () => {
     if (!getStoredToken()) {
-        console.log('저장된 토큰이 없습니다. 테스트 토큰을 사용합니다.');
-        saveToken(TEST_TOKEN);
-        updateTokenStatus();
-    } else {
-        updateTokenStatus();
+        const testToken = await loadOptionalTestToken();
+        if (testToken) {
+            console.log('저장된 토큰이 없습니다. 테스트 토큰을 사용합니다.');
+            saveToken(testToken);
+        } else {
+            console.log('테스트 토큰 파일이 없어 토큰 설정 모달을 엽니다.');
+            openTokenModal();
+        }
     }
+    updateTokenStatus();
 
     // 저장된 TODO/그룹/캐릭터 TODO 상태/원정대 TODO 불러오기
     await Promise.all([
@@ -238,6 +243,19 @@ function isTodoCompletedForCharacter(charKey, groupId, itemId) {
 function isExpeditionTodoCompleted(groupId, itemId) {
     const completed = expeditionTodoState[groupId]?.completed || {};
     return Boolean(completed[itemId]);
+}
+
+async function loadOptionalTestToken() {
+    if (testTokenChecked) return cachedTestToken;
+    testTokenChecked = true;
+    try {
+        const module = await import('./test-token.js');
+        cachedTestToken = module.TEST_TOKEN || null;
+    } catch (error) {
+        console.info('test-token.js 파일을 찾지 못했습니다. 배포 환경으로 간주합니다.');
+        cachedTestToken = null;
+    }
+    return cachedTestToken;
 }
 
 function setTodoCompletionInState(charKey, groupId, itemId, isCompleted) {
@@ -882,13 +900,16 @@ function updateTokenStatus() {
 }
 
 // 모달 열기/닫기
-tokenSettingsBtn.addEventListener('click', () => {
+function openTokenModal() {
     tokenModal.style.display = 'flex';
     const currentToken = getStoredToken();
     if (currentToken) {
         tokenInput.value = currentToken;
     }
-});
+    tokenInput.focus();
+}
+
+tokenSettingsBtn.addEventListener('click', openTokenModal);
 
 cancelTokenBtn.addEventListener('click', () => {
     tokenModal.style.display = 'none';
