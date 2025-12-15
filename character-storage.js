@@ -1,4 +1,5 @@
-import { RTDB_BASE_URL } from './firebase-config.js';
+import { database } from './firebase-config.js';
+import { ref, set, push, get, remove, update, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 // ItemAvgLevel 문자열을 숫자로 변환
 function parseItemLevel(levelValue) {
@@ -86,24 +87,15 @@ async function saveCharacterGroup(characters) {
     };
 
     try {
-        // Firebase REST API를 사용하여 저장
-        const response = await fetch(`${RTDB_BASE_URL}.json`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(groupData)
-        });
+        const groupsRef = ref(database, 'lostark/character_groups');
+        const newGroupRef = push(groupsRef);
 
-        if (!response.ok) {
-            throw new Error(`저장 실패: ${response.status}`);
-        }
+        await set(newGroupRef, groupData);
 
-        const result = await response.json();
-        console.log('캐릭터 그룹 저장 완료:', result);
+        console.log('캐릭터 그룹 저장 완료:', newGroupRef.key);
 
         return {
-            groupId: result.name,
+            groupId: newGroupRef.key,
             ...groupData
         };
     } catch (error) {
@@ -112,19 +104,16 @@ async function saveCharacterGroup(characters) {
     }
 }
 
-// 모든 캐릭터 그룹 조회
-async function getAllCharacterGroups() {
-    try {
-        const response = await fetch(`${RTDB_BASE_URL}.json`);
+// 실시간 캐릭터 그룹 데이터 구독
+function subscribeToCharacterGroups(callback) {
+    const groupsRef = ref(database, 'lostark/character_groups');
 
-        if (!response.ok) {
-            throw new Error(`조회 실패: ${response.status}`);
-        }
-
-        const data = await response.json();
+    return onValue(groupsRef, (snapshot) => {
+        const data = snapshot.val();
 
         if (!data) {
-            return [];
+            callback([]);
+            return;
         }
 
         // 객체를 배열로 변환
@@ -137,6 +126,32 @@ async function getAllCharacterGroups() {
         // 최신순으로 정렬
         groups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+        callback(groups);
+    }, (error) => {
+        console.error('캐릭터 그룹 구독 실패:', error);
+        callback([]);
+    });
+}
+
+// 모든 캐릭터 그룹 조회 (1회성 - 필요시 사용, 보통은 subscribe 권장)
+async function getAllCharacterGroups() {
+    try {
+        const groupsRef = ref(database, 'lostark/character_groups');
+        const snapshot = await get(groupsRef);
+        const data = snapshot.val();
+
+        if (!data) {
+            return [];
+        }
+
+        const groups = Object.keys(data).map(key => ({
+            groupId: key,
+            ...data[key],
+            characters: sortCharactersForDisplay(data[key].characters)
+        }));
+
+        groups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
         return groups;
     } catch (error) {
         console.error('캐릭터 그룹 조회 실패:', error);
@@ -147,13 +162,9 @@ async function getAllCharacterGroups() {
 // 특정 그룹 조회
 async function getCharacterGroup(groupId) {
     try {
-        const response = await fetch(`${RTDB_BASE_URL}/${groupId}.json`);
-
-        if (!response.ok) {
-            throw new Error(`조회 실패: ${response.status}`);
-        }
-
-        const data = await response.json();
+        const groupRef = ref(database, `lostark/character_groups/${groupId}`);
+        const snapshot = await get(groupRef);
+        const data = snapshot.val();
 
         if (!data) {
             return null;
@@ -173,13 +184,8 @@ async function getCharacterGroup(groupId) {
 // 그룹 삭제
 async function deleteCharacterGroup(groupId) {
     try {
-        const response = await fetch(`${RTDB_BASE_URL}/${groupId}.json`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) {
-            throw new Error(`삭제 실패: ${response.status}`);
-        }
+        const groupRef = ref(database, `lostark/character_groups/${groupId}`);
+        await remove(groupRef);
 
         console.log('캐릭터 그룹 삭제 완료:', groupId);
         return true;
@@ -192,17 +198,8 @@ async function deleteCharacterGroup(groupId) {
 // 캐릭터 순서 업데이트
 async function updateCharacterOrder(groupId, characters) {
     try {
-        const response = await fetch(`${RTDB_BASE_URL}/${groupId}.json`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ characters })
-        });
-
-        if (!response.ok) {
-            throw new Error(`순서 저장 실패: ${response.status}`);
-        }
+        const groupRef = ref(database, `lostark/character_groups/${groupId}`);
+        await update(groupRef, { characters });
 
         console.log('캐릭터 순서 업데이트 완료:', groupId);
         return true;
@@ -218,5 +215,6 @@ export {
     getAllCharacterGroups,
     getCharacterGroup,
     deleteCharacterGroup,
-    updateCharacterOrder
+    updateCharacterOrder,
+    subscribeToCharacterGroups
 };

@@ -1,9 +1,9 @@
 import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './lostark-api.js';
-import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder } from './character-storage.js';
+import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder, subscribeToCharacterGroups } from './character-storage.js';
 import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders } from './todo-storage.js';
 import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders } from './expedition-todo-storage.js';
-import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter } from './character-todo-selection.js';
-import { fetchExpeditionTodoState, saveExpeditionTodoCompletion } from './expedition-todo-state.js';
+import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter, subscribeToCharacterTodoState } from './character-todo-selection.js';
+import { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState } from './expedition-todo-state.js';
 
 const resultContainer = document.getElementById('result-container');
 const dateDisplay = document.getElementById('date-display');
@@ -88,14 +88,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     updateTokenStatus();
 
-    // 저장된 TODO/그룹/캐릭터 TODO 상태/원정대 TODO 불러오기
-    await Promise.all([
-        loadTodoCatalog(),
-        loadCharacterTodoState(),
-        loadExpeditionTodoCatalog(),
-        loadExpeditionTodoState()
-    ]);
-    await loadAllGroups();
+    // 1. Static Configuration Data (Todo Catalog / Expedition Todo Catalog)
+    // These effectively don't change often or we haven't migrated them to real-time yet.
+    // Ideally these should also be real-time, but per request we focused on "state" and "groups" first.
+    // However, if the user wants FULL sync, we should consider these too.
+    // For now, we stick to the plan: Sync Groups, Character State, Expedition State.
+    await loadTodoCatalog();
+    await loadExpeditionTodoCatalog();
+
+    // 2. Real-time Subscriptions
+    // Character Groups
+    subscribeToCharacterGroups((groups) => {
+        allGroups = groups;
+        renderTabs();
+
+        // If we haven't selected a group yet (initial load), select default
+        if (currentGroupId === null && allGroups.length > 0) {
+            const { mainGroups, miscGroups } = getGroupBuckets();
+            if (mainGroups.length > 0) {
+                selectGroup(mainGroups[0].groupId);
+            } else if (miscGroups.length > 0) {
+                selectGroup('misc');
+            }
+        } else {
+            // If current group was deleted, fall back
+            // Or just rerender to reflect changes (e.g. name change, order change)
+            rerenderCurrentCardsWithTodos();
+        }
+    });
+
+    // Character Todo State
+    subscribeToCharacterTodoState((newState) => {
+        characterTodoState = newState;
+        rerenderCurrentCardsWithTodos();
+    });
+
+    // Expedition Todo State
+    subscribeToExpeditionTodoState((newState) => {
+        expeditionTodoState = newState;
+        rerenderCurrentCardsWithTodos();
+    });
 });
 
 // TODO 템플릿 불러오기
@@ -125,49 +157,6 @@ async function loadExpeditionTodoCatalog() {
     }
 }
 
-async function loadCharacterTodoState() {
-    try {
-        characterTodoState = await fetchAllCharacterTodoState();
-        rerenderCurrentCardsWithTodos();
-    } catch (error) {
-        console.error('캐릭터 TODO 상태 불러오기 실패:', error);
-        characterTodoState = {};
-        showToast('캐릭터 TODO 상태를 불러오지 못했습니다.', 'error');
-    }
-}
-
-async function loadExpeditionTodoState() {
-    try {
-        expeditionTodoState = await fetchExpeditionTodoState();
-        rerenderCurrentCardsWithTodos();
-    } catch (error) {
-        console.error('원정대 TODO 상태 불러오기 실패:', error);
-        expeditionTodoState = {};
-        showToast('원정대 TODO 상태를 불러오지 못했습니다.', 'error');
-    }
-}
-
-// 저장된 모든 그룹 불러오기
-async function loadAllGroups() {
-    showLoading(true);
-    try {
-        allGroups = await getAllCharacterGroups();
-        renderTabs();
-
-        // 첫 번째 그룹 자동 선택
-        const { mainGroups, miscGroups } = getGroupBuckets();
-        if (mainGroups.length > 0) {
-            selectGroup(mainGroups[0].groupId);
-        } else if (miscGroups.length > 0) {
-            selectGroup('misc');
-        }
-    } catch (error) {
-        console.error('그룹 불러오기 실패:', error);
-    } finally {
-        showLoading(false);
-    }
-}
-
 function renderTodoManagerList() {
     if (!todoManagerList) return;
 
@@ -191,12 +180,12 @@ function renderTodoManagerList() {
             </div>
             <ul class="todo-manager-item-list">
                 ${(group.items || []).length ? group.items.map(item => {
-                    const type = resolveTodoType(item);
-                    const targetCount = resolveTargetCount(item);
-                    const badgeLabel = type === 'counter'
-                        ? (targetCount ? `카운트${targetCount}회` : '카운트∞')
-                        : '체크';
-                    return `
+        const type = resolveTodoType(item);
+        const targetCount = resolveTargetCount(item);
+        const badgeLabel = type === 'counter'
+            ? (targetCount ? `카운트${targetCount}회` : '카운트∞')
+            : '체크';
+        return `
                     <li data-item-id="${item.itemId}" class="todo-manager-row">
                         <div class="todo-manager-item-meta">
                             <span class="todo-badge ${type}">${badgeLabel}</span>
@@ -209,7 +198,7 @@ function renderTodoManagerList() {
                         </div>
                     </li>
                 `;
-                }).join('') : '<li class="todo-manager-empty">항목이 없습니다.</li>'}
+    }).join('') : '<li class="todo-manager-empty">항목이 없습니다.</li>'}
             </ul>
             <div class="todo-add-row">
                 <input type="text" id="todo-item-input-${group.groupId}" data-group-id="${group.groupId}" placeholder="항목 추가 (예: 천상)">
@@ -236,12 +225,12 @@ function renderExpeditionTodoList() {
         <div class="todo-manager-card">
             <ul class="todo-manager-item-list">
                 ${expeditionTodoItems.map((item, idx) => {
-                    const type = resolveTodoType(item);
-                    const targetCount = resolveTargetCount(item);
-                    const badgeLabel = type === 'counter'
-                        ? (targetCount ? `카운트${targetCount}회` : '카운트∞')
-                        : '체크';
-                    return `
+        const type = resolveTodoType(item);
+        const targetCount = resolveTargetCount(item);
+        const badgeLabel = type === 'counter'
+            ? (targetCount ? `카운트${targetCount}회` : '카운트∞')
+            : '체크';
+        return `
                     <li data-item-id="${item.itemId}" class="todo-manager-row">
                         <div class="todo-manager-item-meta">
                             <span class="todo-badge ${type}">${badgeLabel}</span>
@@ -254,7 +243,7 @@ function renderExpeditionTodoList() {
                         </div>
                     </li>
                 `;
-                }).join('')}
+    }).join('')}
             </ul>
         </div>
     `;
@@ -972,8 +961,8 @@ function displayMiscGroups(miscGroups) {
             ${miscGroups.map((group, index) => `
                 <div class="misc-group-row">
                     ${buildExpeditionTodoBlock(group.groupId, {
-                        representativeName: group.representativeName
-                    })}
+        representativeName: group.representativeName
+    })}
                     <div class="characters-grid">
                         ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
                     </div>

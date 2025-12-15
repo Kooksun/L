@@ -1,4 +1,5 @@
-import { EXPEDITION_TODO_BASE_URL } from './firebase-config.js';
+import { database } from './firebase-config.js';
+import { ref, set, push, get, remove, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 function normalizeItems(data) {
     if (!data) return [];
@@ -22,12 +23,14 @@ function normalizeItems(data) {
 }
 
 async function getExpeditionTodoItems() {
-    const response = await fetch(`${EXPEDITION_TODO_BASE_URL}.json`);
-    if (!response.ok) {
-        throw new Error(`원정대 TODO 조회 실패: ${response.status}`);
+    try {
+        const dbRef = ref(database, 'lostark/expedition_todo_catalog');
+        const snapshot = await get(dbRef);
+        return normalizeItems(snapshot.val());
+    } catch (error) {
+        console.error('원정대 TODO 조회 실패:', error);
+        throw error;
     }
-    const data = await response.json();
-    return normalizeItems(data);
 }
 
 async function addExpeditionTodoItem(name, order = null, type = 'check', targetCount = null) {
@@ -38,42 +41,29 @@ async function addExpeditionTodoItem(name, order = null, type = 'check', targetC
         type: type === 'counter' ? 'counter' : 'check',
         targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null
     };
-    const response = await fetch(`${EXPEDITION_TODO_BASE_URL}.json`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-        throw new Error(`원정대 TODO 추가 실패: ${response.status}`);
-    }
-    const result = await response.json();
+
+    const dbRef = ref(database, 'lostark/expedition_todo_catalog');
+    const newRef = push(dbRef);
+    await set(newRef, payload);
+
     return {
-        itemId: result.name,
+        itemId: newRef.key,
         ...payload
     };
 }
 
 async function deleteExpeditionTodoItem(itemId) {
-    const response = await fetch(`${EXPEDITION_TODO_BASE_URL}/${encodeURIComponent(itemId)}.json`, {
-        method: 'DELETE'
-    });
-    if (!response.ok) {
-        throw new Error(`원정대 TODO 삭제 실패: ${response.status}`);
-    }
+    const dbRef = ref(database, `lostark/expedition_todo_catalog/${itemId}`);
+    await remove(dbRef);
 }
 
 async function updateExpeditionTodoOrders(orderEntries) {
-    const requests = orderEntries.map(entry => fetch(`${EXPEDITION_TODO_BASE_URL}/${encodeURIComponent(entry.itemId)}.json`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: entry.order })
-    }));
+    const updates = {};
+    orderEntries.forEach(entry => {
+        updates[`lostark/expedition_todo_catalog/${entry.itemId}/order`] = entry.order;
+    });
 
-    const responses = await Promise.all(requests);
-    const hasError = responses.some(res => !res.ok);
-    if (hasError) {
-        throw new Error('원정대 TODO 순서 저장 실패');
-    }
+    await update(ref(database), updates);
 }
 
 export {

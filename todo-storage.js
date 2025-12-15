@@ -1,4 +1,5 @@
-import { TODO_BASE_URL } from './firebase-config.js';
+import { database } from './firebase-config.js';
+import { ref, set, push, get, remove, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 function normalizeTodoItems(itemsObj) {
     if (!itemsObj) return [];
@@ -53,12 +54,9 @@ function normalizeTodoGroups(data) {
 
 async function getAllTodoGroups() {
     try {
-        const response = await fetch(`${TODO_BASE_URL}.json`);
-        if (!response.ok) {
-            throw new Error(`조회 실패: ${response.status}`);
-        }
-
-        const data = await response.json();
+        const dbRef = ref(database, 'lostark/todo_catalog');
+        const snapshot = await get(dbRef);
+        const data = snapshot.val();
         return normalizeTodoGroups(data);
     } catch (error) {
         console.error('TODO 목록 조회 실패:', error);
@@ -74,32 +72,20 @@ async function createTodoGroup(name, order = null) {
         items: {}
     };
 
-    const response = await fetch(`${TODO_BASE_URL}.json`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+    const dbRef = ref(database, 'lostark/todo_catalog');
+    const newRef = push(dbRef);
+    await set(newRef, payload);
 
-    if (!response.ok) {
-        throw new Error(`그룹 생성 실패: ${response.status}`);
-    }
-
-    const result = await response.json();
     return {
-        groupId: result.name,
+        groupId: newRef.key,
         ...payload,
         items: []
     };
 }
 
 async function deleteTodoGroup(groupId) {
-    const response = await fetch(`${TODO_BASE_URL}/${groupId}.json`, {
-        method: 'DELETE'
-    });
-
-    if (!response.ok) {
-        throw new Error(`그룹 삭제 실패: ${response.status}`);
-    }
+    const dbRef = ref(database, `lostark/todo_catalog/${groupId}`);
+    await remove(dbRef);
 }
 
 async function addTodoItem(groupId, itemName, order = null, type = 'check', targetCount = null) {
@@ -111,59 +97,39 @@ async function addTodoItem(groupId, itemName, order = null, type = 'check', targ
         targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null
     };
 
-    const response = await fetch(`${TODO_BASE_URL}/${groupId}/items.json`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+    const dbRef = ref(database, `lostark/todo_catalog/${groupId}/items`);
+    const newRef = push(dbRef);
+    await set(newRef, payload);
 
-    if (!response.ok) {
-        throw new Error(`항목 추가 실패: ${response.status}`);
-    }
-
-    const result = await response.json();
     return {
-        itemId: result.name,
+        itemId: newRef.key,
         ...payload
     };
 }
 
 async function deleteTodoItem(groupId, itemId) {
-    const response = await fetch(`${TODO_BASE_URL}/${groupId}/items/${itemId}.json`, {
-        method: 'DELETE'
-    });
-
-    if (!response.ok) {
-        throw new Error(`항목 삭제 실패: ${response.status}`);
-    }
+    const dbRef = ref(database, `lostark/todo_catalog/${groupId}/items/${itemId}`);
+    await remove(dbRef);
 }
 
 async function updateTodoGroupOrders(orderEntries) {
-    const requests = orderEntries.map(entry => fetch(`${TODO_BASE_URL}/${entry.groupId}.json`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: entry.order })
-    }));
+    const updates = {};
+    orderEntries.forEach(entry => {
+        updates[`lostark/todo_catalog/${entry.groupId}/order`] = entry.order;
+    });
 
-    const responses = await Promise.all(requests);
-    const hasError = responses.some(res => !res.ok);
-    if (hasError) {
-        throw new Error('순서 저장 실패');
-    }
+    // Using root reference to update multiple paths atomically is better
+    // But here we can just update parallel or use 'update' on parent.
+    // 'update' at root level is good.
+    await update(ref(database), updates);
 }
 
 async function updateTodoItemOrders(groupId, orderEntries) {
-    const requests = orderEntries.map(entry => fetch(`${TODO_BASE_URL}/${groupId}/items/${entry.itemId}.json`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: entry.order })
-    }));
-
-    const responses = await Promise.all(requests);
-    const hasError = responses.some(res => !res.ok);
-    if (hasError) {
-        throw new Error('항목 순서 저장 실패');
-    }
+    const updates = {};
+    orderEntries.forEach(entry => {
+        updates[`lostark/todo_catalog/${groupId}/items/${entry.itemId}/order`] = entry.order;
+    });
+    await update(ref(database), updates);
 }
 
 export {

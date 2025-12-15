@@ -1,4 +1,5 @@
-import { EXPEDITION_TODO_STATE_BASE_URL } from './firebase-config.js';
+import { database } from './firebase-config.js';
+import { ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 function normalizeState(data) {
     if (!data) return {};
@@ -11,32 +12,34 @@ function normalizeState(data) {
     }, {});
 }
 
+// 실시간 상태 구독
+function subscribeToExpeditionTodoState(callback) {
+    const stateRef = ref(database, 'lostark/expedition_todo_state');
+
+    return onValue(stateRef, (snapshot) => {
+        const data = snapshot.val();
+        callback(normalizeState(data));
+    }, (error) => {
+        console.error('원정대 TODO 상태 구독 실패:', error);
+        callback({});
+    });
+}
+
+// deprecated but kept for signature compatibility if needed (will be removed from app.js)
 async function fetchExpeditionTodoState() {
-    try {
-        const response = await fetch(`${EXPEDITION_TODO_STATE_BASE_URL}.json`);
-        if (!response.ok) throw new Error(`상태 조회 실패: ${response.status}`);
-        const data = await response.json();
-        return normalizeState(data);
-    } catch (error) {
-        console.error('원정대 TODO 상태 조회 실패:', error);
-        return {};
-    }
+    console.warn('fetchExpeditionTodoState is deprecated. Use subscribeToExpeditionTodoState instead.');
+    return {};
 }
 
 async function saveExpeditionTodoCompletion(groupId, itemId, value) {
     const normalizedValue = typeof value === 'number'
         ? Math.max(0, Math.floor(value))
         : !!value;
-    const url = `${EXPEDITION_TODO_STATE_BASE_URL}/${encodeURIComponent(groupId)}/completed/${encodeURIComponent(itemId)}.json`;
-    const response = await fetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalizedValue)
-    });
-    if (!response.ok) {
-        throw new Error(`원정대 TODO 완료 상태 저장 실패: ${response.status}`);
-    }
+
+    const itemRef = ref(database, `lostark/expedition_todo_state/${groupId}/completed/${itemId}`);
+    await set(itemRef, normalizedValue);
+
     return normalizedValue;
 }
 
-export { fetchExpeditionTodoState, saveExpeditionTodoCompletion };
+export { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState };
