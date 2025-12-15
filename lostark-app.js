@@ -428,12 +428,146 @@ function rerenderCurrentCardsWithTodos() {
     const { mainGroups, miscGroups } = getGroupBuckets();
     const group = mainGroups.find(g => g.groupId === currentGroupId);
 
+    const currentContainerGroup = document.querySelector('.characters-grid')?.dataset?.groupId;
+
     if (group) {
-        displayCharacters(group);
+        if (currentContainerGroup === group.groupId) {
+            updateCharactersInPlace(group);
+        } else {
+            displayCharacters(group);
+        }
     } else if (currentGroupId === 'misc') {
+        // Misc groups are complex to update in-place due to dynamic list structure.
+        // For now, full re-render is safer and acceptable since it's less frequently used for high-frequency updates.
         displayMiscGroups(miscGroups);
     }
 }
+
+function updateCharactersInPlace(group) {
+    if (!group) return;
+
+    // 1. Update Expedition Todo Block
+    updateExpeditionTodoBlockInPlace(group.groupId);
+
+    // 2. Update Character Cards
+    const characters = getCharactersInDisplayOrder(group.characters || []);
+    const grid = resultContainer.querySelector('.characters-grid');
+    if (!grid) return;
+
+    characters.forEach(char => {
+        const charKey = getCharacterKey(char);
+        const card = grid.querySelector(`.character-card[data-character-key="${charKey}"]`);
+
+        // If card doesn't exist (e.g. new character added), full re-render needed
+        // But for sync updates (todo changes), it should exist.
+        if (card) {
+            updateCharacterCardInPlace(card, char, group.groupId);
+        } else {
+            // Found a new character not in DOM -> Fallback to full render
+            // usage of this function assumes structure is mostly stable, but for safety:
+            displayCharacters(group);
+            return;
+        }
+    });
+
+    // Check if any character was removed
+    const messageCards = grid.querySelectorAll('.character-card');
+    if (messageCards.length !== characters.length) {
+        displayCharacters(group);
+    }
+}
+
+function updateExpeditionTodoBlockInPlace(groupId) {
+    const block = resultContainer.querySelector(`.todo-group-block.expedition-block[data-group-id="${groupId}"]`);
+    if (!block) return;
+
+    const items = expeditionTodoItems || [];
+    const list = block.querySelector('.todo-list');
+    if (!list) return;
+
+    items.forEach((item, index) => {
+        const itemId = item.itemId ?? index;
+        const type = resolveTodoType(item);
+        const targetCount = resolveTargetCount(item);
+        const value = getExpeditionTodoValue(groupId, itemId);
+        const isCompletable = isTodoItemCompletable(type, targetCount);
+        const isCompleted = isTodoItemCompleted(type, targetCount, value);
+
+        const row = list.querySelector(`.todo-item-row[data-item-id="${itemId}"]`);
+        if (row) {
+            // Update attributes
+            if (row.dataset.value != value) row.dataset.value = value;
+            if (row.dataset.completed !== (isCompleted ? 'true' : 'false')) row.dataset.completed = isCompleted ? 'true' : 'false';
+
+            // Update Checkbox
+            const checkbox = row.querySelector('.todo-checkbox');
+            if (checkbox && checkbox.checked !== isCompleted) {
+                checkbox.checked = isCompleted;
+            }
+
+            // Update Counter
+            if (type === 'counter') {
+                const progress = row.querySelector('.counter-progress');
+                if (progress) {
+                    const newHtml = renderCounterProgressHtml(targetCount, value);
+                    if (progress.innerHTML !== newHtml) {
+                        progress.innerHTML = newHtml;
+                    }
+                }
+            }
+        }
+    });
+
+    // Update Meta
+    updateTodoGroupMeta(block);
+}
+
+function updateCharacterCardInPlace(card, char, groupId) {
+    const charKey = getCharacterKey(char);
+    const todosForCard = getTodoGroupsForCard(char);
+
+    todosForCard.forEach(group => {
+        const groupBlock = card.querySelector(`.todo-group-block .todo-group-title .meta[data-group-id="${safeDomId(group.groupId || group.name, 'group')}"]`)?.closest('.todo-group-block');
+
+        if (groupBlock) {
+            const items = group.items || [];
+            items.forEach((item, index) => {
+                const itemId = item.itemId ?? index;
+                const type = resolveTodoType(item);
+                const targetCount = resolveTargetCount(item);
+                const value = getTodoValueForCharacter(charKey, group.groupId, itemId);
+                const isCompletable = isTodoItemCompletable(type, targetCount);
+                const isCompleted = isTodoItemCompleted(type, targetCount, value);
+
+                const row = groupBlock.querySelector(`.todo-item-row[data-item-id="${itemId}"]`);
+                if (row) {
+                    // Update attributes
+                    if (row.dataset.value != value) row.dataset.value = value;
+                    if (row.dataset.completed !== (isCompleted ? 'true' : 'false')) row.dataset.completed = isCompleted ? 'true' : 'false';
+
+                    // Update Checkbox
+                    const checkbox = row.querySelector('.todo-checkbox');
+                    if (checkbox && checkbox.checked !== isCompleted) {
+                        checkbox.checked = isCompleted;
+                    }
+
+                    // Update Counter
+                    if (type === 'counter') {
+                        const progress = row.querySelector('.counter-progress');
+                        if (progress) {
+                            const newHtml = renderCounterProgressHtml(targetCount, value);
+                            if (progress.innerHTML !== newHtml) {
+                                progress.innerHTML = newHtml;
+                            }
+                        }
+                    }
+                }
+            });
+            updateTodoGroupMeta(groupBlock);
+        }
+    });
+}
+
 
 function attachTodoCheckboxHandlers(scope) {
     if (!scope) return;
@@ -1644,18 +1778,12 @@ async function searchCharacter(characterName) {
             return;
         }
 
-        // RTDB에 저장
+        // RTDB에 저장 (리스너가 자동으로 목록 업데이트)
         const savedGroup = await saveCharacterGroup(siblings);
         console.log('저장 완료:', savedGroup);
 
-        // 그룹 목록에 추가
-        allGroups.unshift(savedGroup);
-
-        // 탭 렌더링 (새 그룹이 즉시 표시되도록)
-        renderTabs();
-
-        // 새로 추가된 그룹 선택
-        selectGroup(savedGroup.groupId);
+        // 새로 추가된 그룹 ID 설정 (리스너가 렌더링할 때 활성화됨)
+        currentGroupId = savedGroup.groupId;
 
         alert(`"${savedGroup.representativeName}" 그룹이 저장되었습니다!`);
 
