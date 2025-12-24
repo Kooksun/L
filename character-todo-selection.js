@@ -1,5 +1,5 @@
 import { database } from './firebase-config.js';
-import { ref, update, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { ref, update, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 function normalizeEntry(entry = {}) {
     const selectedGroups = Array.isArray(entry.selectedGroups)
