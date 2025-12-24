@@ -1,5 +1,5 @@
 import { database } from './firebase-config.js';
-import { ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { ref, set, onValue, get, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 function normalizeState(data) {
     if (!data) return {};
@@ -42,4 +42,30 @@ async function saveExpeditionTodoCompletion(groupId, itemId, value) {
     return normalizedValue;
 }
 
-export { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState };
+async function resetAllExpeditionTodos() {
+    const stateRef = ref(database, 'lostark/expedition_todo_state');
+    const snapshot = await get(stateRef);
+    const data = snapshot.val();
+    if (!data) return;
+
+    const updates = {};
+    Object.keys(data).forEach(groupId => {
+        updates[`lostark/expedition_todo_state/${groupId}/completed`] = null;
+    });
+
+    await update(ref(database), updates);
+}
+
+async function resetTodosForExpeditionGroup(groupId) {
+    if (!groupId) return;
+    const itemRef = ref(database, `lostark/expedition_todo_state/${groupId}/completed`);
+    await set(itemRef, null);
+}
+
+export {
+    fetchExpeditionTodoState,
+    saveExpeditionTodoCompletion,
+    subscribeToExpeditionTodoState,
+    resetAllExpeditionTodos,
+    resetTodosForExpeditionGroup
+};

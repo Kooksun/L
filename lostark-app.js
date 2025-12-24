@@ -2,8 +2,10 @@ import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './l
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder, subscribeToCharacterGroups } from './character-storage.js';
 import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders } from './todo-storage.js';
 import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders } from './expedition-todo-storage.js';
-import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter, subscribeToCharacterTodoState } from './character-todo-selection.js';
-import { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState } from './expedition-todo-state.js';
+import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter, subscribeToCharacterTodoState, resetAllCharacterTodos, resetTodosForCharacterGroup } from './character-todo-selection.js';
+import { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState, resetAllExpeditionTodos, resetTodosForExpeditionGroup } from './expedition-todo-state.js';
+import { database } from './firebase-config.js';
+import { ref, get, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 const resultContainer = document.getElementById('result-container');
 const dateDisplay = document.getElementById('date-display');
@@ -128,7 +130,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         expeditionTodoState = newState;
         rerenderCurrentCardsWithTodos();
     });
+
+    // 3. Weekly Reset Check
+    await checkAndResetWeekly();
 });
+
+// Weekly Reset Logic (Wed 10:00 AM)
+async function checkAndResetWeekly() {
+    try {
+        const metaRef = ref(database, 'lostark/meta');
+        const snapshot = await get(metaRef);
+        const metaData = snapshot.val() || {};
+        const lastReset = metaData.lastReset ? new Date(metaData.lastReset) : new Date(0);
+
+        const now = new Date();
+        const resetTarget = new Date(now);
+
+        // Find most recent Wednesday 10:00 AM
+        // Day 0=Sun, 1=Mon, 2=Tue, 3=Wed...
+        const currentDay = now.getDay();
+        const distanceToWed = (currentDay + 7 - 3) % 7;
+
+        resetTarget.setDate(now.getDate() - distanceToWed);
+        resetTarget.setHours(10, 0, 0, 0);
+
+        // If today is Wednesday but BEFORE 10AM, we should look at LAST week's Wed
+        if (distanceToWed === 0 && now < resetTarget) {
+            resetTarget.setDate(resetTarget.getDate() - 7);
+        }
+
+        console.log("Last Reset:", lastReset.toLocaleString());
+        console.log("Target Reset Time:", resetTarget.toLocaleString());
+
+        if (lastReset < resetTarget) {
+            console.log("Resetting all todos...");
+            showLoading(true);
+
+            await Promise.all([
+                resetAllCharacterTodos(),
+                resetAllExpeditionTodos()
+            ]);
+
+            // Update lastReset
+            await update(ref(database), { 'lostark/meta/lastReset': now.toISOString() });
+
+            showLoading(false);
+            alert("매주 수요일 오전 10시 리셋! 모든 숙제가 초기화되었습니다.");
+        }
+    } catch (error) {
+        console.error("Weekly reset check failed:", error);
+    }
+}
 
 // TODO 템플릿 불러오기
 async function loadTodoCatalog() {
@@ -973,11 +1025,40 @@ function renderMiscSettingsList() {
                 <div class="misc-settings-meta">${group.characters?.length || 0}캐릭터</div>
             </div>
             <div class="todo-manager-actions-inline">
+                <button class="secondary-btn xs group-reset-btn" data-group-id="${group.groupId}">초기화</button>
                 <button class="secondary-btn xs misc-refresh-btn" data-group-id="${group.groupId}">갱신</button>
                 <button class="danger-btn small group-delete-btn" data-group-id="${group.groupId}">삭제</button>
             </div>
         </div>
     `).join('');
+
+    miscSettingsList.querySelectorAll('.group-reset-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const groupId = btn.dataset.groupId;
+            const group = allGroups.find(g => g.groupId === groupId);
+            if (!group) return;
+
+            const confirmed = await showConfirmModal(`"${group.representativeName}" 원정대의 모든 숙제를 초기화하시겠습니까?`);
+            if (!confirmed) return;
+
+            showLoading(true);
+            try {
+                const charKeys = (group.characters || []).map(char => getCharacterKey(char));
+                await Promise.all([
+                    resetTodosForCharacterGroup(charKeys),
+                    resetTodosForExpeditionGroup(groupId)
+                ]);
+                showToast('원정대 숙제가 초기화되었습니다.');
+            } catch (error) {
+                console.error('원정대 초기화 실패:', error);
+                showToast('초기화에 실패했습니다.', 'error');
+            } finally {
+                showLoading(false);
+            }
+        });
+    });
 
     miscSettingsList.querySelectorAll('.misc-refresh-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {

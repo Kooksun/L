@@ -76,10 +76,37 @@ async function saveTodoCompletionForCharacter(charKey, groupId, itemId, value) {
     return normalizedValue;
 }
 
+async function resetAllCharacterTodos() {
+    const stateRef = ref(database, 'lostark/character_todo_state');
+    const snapshot = await get(stateRef);
+    const data = snapshot.val();
+    if (!data) return;
+
+    const updates = {};
+    Object.keys(data).forEach(charKey => {
+        updates[`lostark/character_todo_state/${charKey}/completed`] = null;
+    });
+
+    await update(ref(database), updates);
+}
+
+async function resetTodosForCharacterGroup(charKeys) {
+    if (!Array.isArray(charKeys) || charKeys.length === 0) return;
+
+    const updates = {};
+    charKeys.forEach(charKey => {
+        updates[`lostark/character_todo_state/${charKey}/completed`] = null;
+    });
+
+    await update(ref(database), updates);
+}
+
 export {
     fetchAllCharacterTodoState,
     saveSelectedGroupsForCharacter,
     clearTodoSelectionForCharacter,
     saveTodoCompletionForCharacter,
-    subscribeToCharacterTodoState
+    subscribeToCharacterTodoState,
+    resetAllCharacterTodos,
+    resetTodosForCharacterGroup
 };
