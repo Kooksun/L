@@ -4,7 +4,8 @@ import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, delete
 import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders } from './expedition-todo-storage.js';
 import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter, subscribeToCharacterTodoState, resetAllCharacterTodos, resetTodosForCharacterGroup } from './character-todo-selection.js';
 import { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState, resetAllExpeditionTodos, resetTodosForExpeditionGroup } from './expedition-todo-state.js';
-import { database } from './firebase-config.js';
+import { auth, database } from './firebase-config.js';
+import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { ref, get, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 const resultContainer = document.getElementById('result-container');
@@ -78,6 +79,14 @@ dateDisplay.textContent = new Date().toLocaleDateString('ko-KR', options);
 
 // 초기화
 document.addEventListener('DOMContentLoaded', async () => {
+    // 0. Anonymous Authentication
+    try {
+        await signInAnonymously(auth);
+        console.log("Firebase Anonymous Sign-in successful");
+    } catch (error) {
+        console.error("Firebase Anonymous Sign-in failed:", error);
+    }
+
     if (!getStoredToken()) {
         const testToken = await loadOptionalTestToken();
         if (testToken) {
