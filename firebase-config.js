@@ -4,7 +4,14 @@ import { getDatabase } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 const firebaseConfig = {
-    databaseURL: "https://kooksun-hr-default-rtdb.firebaseio.com"
+    apiKey: "AIzaSyDioYtc2VVN5erDiv_Tp-VdG4Zg1P9fm3k",
+    authDomain: "kooksun-hr.firebaseapp.com",
+    databaseURL: "https://kooksun-hr-default-rtdb.firebaseio.com",
+    projectId: "kooksun-hr",
+    storageBucket: "kooksun-hr.firebasestorage.app",
+    messagingSenderId: "403254476989",
+    appId: "1:403254476989:web:c05fb023e550516037b7d4",
+    measurementId: "G-L4WYFHYYGF"
 };
 
 // Initialize Firebase
