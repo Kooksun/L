@@ -1161,3 +1161,23 @@ header h1 {
     border: 1px dashed var(--border-color);
     border-radius: 8px;
 }
+
+/* 기타 탭 - 소규모 전용 그룹 스타일 */
+.consolidated-single-groups {
+    margin-top: 1rem;
+}
+
+.consolidated-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.consolidated-title {
+    font-size: 1.3rem;
+    margin-bottom: 0.4rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}

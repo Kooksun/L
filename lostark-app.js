@@ -115,10 +115,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // If we haven't selected a group yet (initial load), select default
         if (currentGroupId === null && allGroups.length > 0) {
-            const { mainGroups, miscGroups } = getGroupBuckets();
+            const { mainGroups, multiMiscGroups, singleMiscGroups } = getGroupBuckets();
             if (mainGroups.length > 0) {
                 selectGroup(mainGroups[0].groupId);
-            } else if (miscGroups.length > 0) {
+            } else if (multiMiscGroups.length > 0 || singleMiscGroups.length > 0) {
                 selectGroup('misc');
             }
         } else {
@@ -453,7 +453,7 @@ function renderTabs() {
         return;
     }
 
-    const { mainGroups, miscGroups } = getGroupBuckets();
+    const { mainGroups, multiMiscGroups, singleMiscGroups } = getGroupBuckets();
 
     const tabsHtml = [
         ...mainGroups.map(group => `
@@ -463,9 +463,9 @@ function renderTabs() {
                 <button class="tab-delete-btn" data-group-id="${group.groupId}" title="삭제">×</button>
             </div>
         `),
-        ...(miscGroups.length ? [`
+        ...(multiMiscGroups.length || singleMiscGroups.length ? [`
             <div class="tab ${currentGroupId === 'misc' ? 'active' : ''}" data-group-id="misc">
-                <span class="tab-name">기타 (${miscGroups.length})</span>
+                <span class="tab-name">기타 (${multiMiscGroups.length + singleMiscGroups.length})</span>
             </div>
             <button class="misc-settings-trigger" title="기타 원정대 관리">⚙️</button>
         `] : [])
@@ -481,12 +481,14 @@ function renderTabs() {
 function getGroupBuckets() {
     const mainGroups = allGroups.filter(g => (g.characters?.length || 0) > 6);
     const miscGroups = allGroups.filter(g => (g.characters?.length || 0) <= 6);
-    return { mainGroups, miscGroups };
+    const multiMiscGroups = miscGroups.filter(g => (g.characters?.length || 0) > 1);
+    const singleMiscGroups = miscGroups.filter(g => (g.characters?.length || 0) === 1);
+    return { mainGroups, multiMiscGroups, singleMiscGroups };
 }
 
 function rerenderCurrentCardsWithTodos() {
     if (!currentGroupId) return;
-    const { mainGroups, miscGroups } = getGroupBuckets();
+    const { mainGroups, multiMiscGroups, singleMiscGroups } = getGroupBuckets();
     const group = mainGroups.find(g => g.groupId === currentGroupId);
 
     const currentContainerGroup = document.querySelector('.characters-grid')?.dataset?.groupId;
@@ -500,7 +502,7 @@ function rerenderCurrentCardsWithTodos() {
     } else if (currentGroupId === 'misc') {
         // Misc groups are complex to update in-place due to dynamic list structure.
         // For now, full re-render is safer and acceptable since it's less frequently used for high-frequency updates.
-        displayMiscGroups(miscGroups);
+        displayMiscGroups(multiMiscGroups, singleMiscGroups);
     }
 }
 
@@ -940,9 +942,11 @@ function setupTabEvents() {
 
 // 그룹 선택
 function selectGroup(groupId) {
-    const { mainGroups, miscGroups } = getGroupBuckets();
+    const { mainGroups, multiMiscGroups, singleMiscGroups } = getGroupBuckets();
     const group = mainGroups.find(g => g.groupId === groupId);
-    const isMiscGroup = miscGroups.some(g => g.groupId === groupId) || groupId === 'misc';
+    const isMiscGroup = multiMiscGroups.some(g => g.groupId === groupId) ||
+        singleMiscGroups.some(g => g.groupId === groupId) ||
+        groupId === 'misc';
 
     currentGroupId = group ? groupId : (isMiscGroup ? 'misc' : groupId);
 
@@ -958,7 +962,7 @@ function selectGroup(groupId) {
     if (group) {
         displayCharacters(group);
     } else if (isMiscGroup) {
-        displayMiscGroups(miscGroups);
+        displayMiscGroups(multiMiscGroups, singleMiscGroups);
     }
 }
 
@@ -1127,7 +1131,7 @@ async function handleDeleteGroup(groupId) {
         allGroups = allGroups.filter(g => g.groupId !== groupId);
 
         renderTabs();
-        const { mainGroups, miscGroups } = getGroupBuckets();
+        const { mainGroups, multiMiscGroups, singleMiscGroups } = getGroupBuckets();
 
         // 삭제된 그룹이 현재 선택된 그룹이면 다른 그룹 선택
         if (currentGroupId === groupId) {
@@ -1136,11 +1140,11 @@ async function handleDeleteGroup(groupId) {
 
             if (mainGroups.length > 0) {
                 selectGroup(mainGroups[0].groupId);
-            } else if (miscGroups.length > 0) {
+            } else if (multiMiscGroups.length > 0 || singleMiscGroups.length > 0) {
                 selectGroup('misc');
             }
         } else if (currentGroupId === 'misc') {
-            if (miscGroups.length > 0) {
+            if (multiMiscGroups.length > 0 || singleMiscGroups.length > 0) {
                 selectGroup('misc');
             } else if (mainGroups.length > 0) {
                 selectGroup(mainGroups[0].groupId);
@@ -1174,29 +1178,46 @@ function displayCharacters(group) {
 }
 
 // 기타 그룹 표시 (6개 이하 그룹 모음)
-function displayMiscGroups(miscGroups) {
-    if (!miscGroups || miscGroups.length === 0) {
+function displayMiscGroups(multiMiscGroups, singleMiscGroups) {
+    if ((!multiMiscGroups || multiMiscGroups.length === 0) && (!singleMiscGroups || singleMiscGroups.length === 0)) {
         resultContainer.innerHTML = '<p class="no-results">표시할 기타 그룹이 없습니다.</p>';
         return;
     }
 
-    const html = `
-        <div class="misc-groups">
-            ${miscGroups.map((group, index) => `
-                <div class="misc-group-row">
-                    ${buildExpeditionTodoBlock(group.groupId, {
+    const multiHtml = multiMiscGroups.map((group, index) => `
+        <div class="misc-group-row">
+            ${buildExpeditionTodoBlock(group.groupId, {
         representativeName: group.representativeName
     })}
-                    <div class="characters-grid">
-                        ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
-                    </div>
+            <div class="characters-grid">
+                ${buildCharacterCards(getCharactersInDisplayOrder(group.characters || []))}
+            </div>
+        </div>
+        ${index < multiMiscGroups.length - 1 || singleMiscGroups.length > 0 ? '<div class="misc-group-divider"></div>' : ''}
+    `).join('');
+
+    let singleHtml = '';
+    if (singleMiscGroups.length > 0) {
+        const allSingleCharacters = singleMiscGroups.flatMap(g => g.characters || []);
+
+        singleHtml = `
+            <div class="misc-group-row consolidated-single-groups">
+                <div class="consolidated-header">
+                    <h3 class="consolidated-title">🛡️ 소규모 전용 그룹, ${allSingleCharacters.length}개 캐릭터</h3>
                 </div>
-                ${index < miscGroups.length - 1 ? '<div class="misc-group-divider"></div>' : ''}
-            `).join('')}
+                <div class="characters-grid">
+                    ${buildCharacterCards(getCharactersInDisplayOrder(allSingleCharacters))}
+                </div>
+            </div>
+        `;
+    }
+
+    resultContainer.innerHTML = `
+        <div class="misc-groups">
+            ${multiHtml}
+            ${singleHtml}
         </div>
     `;
-
-    resultContainer.innerHTML = html;
 
     resultContainer.querySelectorAll('.group-delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
