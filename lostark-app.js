@@ -500,8 +500,81 @@ function rerenderCurrentCardsWithTodos() {
             displayCharacters(group);
         }
     } else if (currentGroupId === 'misc') {
-        // Misc groups are complex to update in-place due to dynamic list structure.
-        // For now, full re-render is safer and acceptable since it's less frequently used for high-frequency updates.
+        // Misc groups update in-place or full re-render
+        updateMiscGroupsInPlace(multiMiscGroups, singleMiscGroups);
+    }
+}
+
+function updateMiscGroupsInPlace(multiMiscGroups, singleMiscGroups) {
+    const container = resultContainer.querySelector('.misc-groups');
+    if (!container) {
+        displayMiscGroups(multiMiscGroups, singleMiscGroups);
+        return;
+    }
+
+    // 1. Update multi-misc groups
+    const multiRows = container.querySelectorAll('.misc-group-row:not(.consolidated-single-groups)');
+    if (multiRows.length !== multiMiscGroups.length) {
+        displayMiscGroups(multiMiscGroups, singleMiscGroups);
+        return;
+    }
+
+    multiMiscGroups.forEach((group, index) => {
+        const row = multiRows[index];
+        if (row.dataset.groupId !== group.groupId) {
+            displayMiscGroups(multiMiscGroups, singleMiscGroups);
+            return;
+        }
+
+        // Update Expedition Todo Block
+        updateExpeditionTodoBlockInPlace(group.groupId);
+
+        // Update Character Cards
+        const characters = getCharactersInDisplayOrder(group.characters || []);
+        const grid = row.querySelector('.characters-grid');
+        if (!grid) return;
+
+        const cards = grid.querySelectorAll('.character-card');
+        if (cards.length !== characters.length) {
+            displayMiscGroups(multiMiscGroups, singleMiscGroups);
+            return;
+        }
+
+        characters.forEach((char, charIdx) => {
+            const card = cards[charIdx];
+            if (card.dataset.characterKey !== getCharacterKey(char)) {
+                displayMiscGroups(multiMiscGroups, singleMiscGroups);
+                return;
+            }
+            updateCharacterCardInPlace(card, char, group.groupId);
+        });
+    });
+
+    // 2. Update single-misc groups (consolidated)
+    const singleRow = container.querySelector('.misc-group-row.consolidated-single-groups');
+    if (singleRow) {
+        const allSingleCharacters = singleMiscGroups.flatMap(g => g.characters || []);
+        const sortedSingles = getCharactersInDisplayOrder(allSingleCharacters);
+        const grid = singleRow.querySelector('.characters-grid');
+        if (grid) {
+            const cards = grid.querySelectorAll('.character-card');
+            if (cards.length !== sortedSingles.length) {
+                displayMiscGroups(multiMiscGroups, singleMiscGroups);
+                return;
+            }
+
+            sortedSingles.forEach((char, charIdx) => {
+                const card = cards[charIdx];
+                if (card.dataset.characterKey !== getCharacterKey(char)) {
+                    displayMiscGroups(multiMiscGroups, singleMiscGroups);
+                    return;
+                }
+                // Group ID for single groups is its own groupId
+                const charGroup = singleMiscGroups.find(g => (g.characters || []).some(c => getCharacterKey(c) === getCharacterKey(char)));
+                updateCharacterCardInPlace(card, char, charGroup?.groupId);
+            });
+        }
+    } else if (singleMiscGroups.length > 0) {
         displayMiscGroups(multiMiscGroups, singleMiscGroups);
     }
 }
@@ -1185,7 +1258,7 @@ function displayMiscGroups(multiMiscGroups, singleMiscGroups) {
     }
 
     const multiHtml = multiMiscGroups.map((group, index) => `
-        <div class="misc-group-row">
+        <div class="misc-group-row" data-group-id="${group.groupId}">
             ${buildExpeditionTodoBlock(group.groupId, {
         representativeName: group.representativeName
     })}
