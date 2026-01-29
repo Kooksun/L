@@ -454,7 +454,49 @@ header h1 {
     gap: 0.4rem;
     justify-content: flex-start;
     flex-wrap: wrap;
+    position: relative;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: background 0.2s;
 }
+
+.todo-list li.important {
+    padding: 2px 4px;
+    margin: 0;
+    border: none;
+    background: rgba(255, 255, 255, 0.03);
+    /* Extremely subtle brightness hint */
+    border-radius: 4px;
+    box-shadow: none;
+}
+
+.todo-list li.important::before {
+    display: none;
+}
+
+.todo-list li.important .todo-text {
+    color: #ffffff;
+    /* Brighter white */
+    font-weight: 800;
+    /* Extra bold for distinction */
+}
+
+.todo-list li.important .todo-checkbox {
+    border-color: #8c959c;
+    /* Brighter than normal #4b545c */
+}
+
+.todo-list li.important .todo-checkbox:checked {
+    background-color: var(--primary-color);
+    /* Lighter indigo tone than secondary */
+    border-color: var(--primary-color);
+    box-shadow: 0 0 8px rgba(162, 155, 254, 0.3);
+}
+
+.todo-list li.important:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
 
 .counter-row {
     align-items: center;
@@ -755,6 +797,18 @@ header h1 {
 .danger-btn:hover {
     background: #d63031;
     transform: translateY(-2px);
+}
+
+.todo-item-important-btn.active,
+.expedition-item-important-btn.active {
+    color: #ffd166 !important;
+    border-color: #ffd166 !important;
+    background: rgba(255, 209, 102, 0.1) !important;
+}
+
+.todo-item-important-btn:hover,
+.expedition-item-important-btn:hover {
+    transform: scale(1.1);
 }
 
 /* 토스트 메시지 */

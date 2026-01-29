@@ -8,6 +8,7 @@ function normalizeItems(data) {
         name: data[key]?.name || '',
         createdAt: data[key]?.createdAt || null,
         order: Number.isFinite(data[key]?.order) ? data[key].order : null,
+        isImportant: !!data[key]?.isImportant,
         type: data[key]?.type === 'counter' ? 'counter' : 'check',
         targetCount: Number.isFinite(data[key]?.targetCount) ? Number(data[key].targetCount) : null
     })).sort((a, b) => {
@@ -33,11 +34,12 @@ async function getExpeditionTodoItems() {
     }
 }
 
-async function addExpeditionTodoItem(name, order = null, type = 'check', targetCount = null) {
+async function addExpeditionTodoItem(name, order = null, type = 'check', targetCount = null, isImportant = false) {
     const payload = {
         name,
         createdAt: new Date().toISOString(),
         order: Number.isFinite(order) ? order : null,
+        isImportant: !!isImportant,
         type: type === 'counter' ? 'counter' : 'check',
         targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null
     };
@@ -66,9 +68,15 @@ async function updateExpeditionTodoOrders(orderEntries) {
     await update(ref(database), updates);
 }
 
+async function updateExpeditionTodoImportant(itemId, isImportant) {
+    const dbRef = ref(database, `lostark/expedition_todo_catalog/${itemId}`);
+    await update(dbRef, { isImportant: !!isImportant });
+}
+
 export {
     getExpeditionTodoItems,
     addExpeditionTodoItem,
     deleteExpeditionTodoItem,
-    updateExpeditionTodoOrders
+    updateExpeditionTodoOrders,
+    updateExpeditionTodoImportant
 };

@@ -9,6 +9,7 @@ function normalizeTodoItems(itemsObj) {
         name: itemsObj[key]?.name || '',
         createdAt: itemsObj[key]?.createdAt || null,
         order: Number.isFinite(itemsObj[key]?.order) ? itemsObj[key].order : null,
+        isImportant: !!itemsObj[key]?.isImportant,
         type: itemsObj[key]?.type === 'counter' ? 'counter' : 'check',
         targetCount: Number.isFinite(itemsObj[key]?.targetCount) ? Number(itemsObj[key].targetCount) : null
     })).sort((a, b) => {
@@ -88,11 +89,12 @@ async function deleteTodoGroup(groupId) {
     await remove(dbRef);
 }
 
-async function addTodoItem(groupId, itemName, order = null, type = 'check', targetCount = null) {
+async function addTodoItem(groupId, itemName, order = null, type = 'check', targetCount = null, isImportant = false) {
     const payload = {
         name: itemName,
         createdAt: new Date().toISOString(),
         order: Number.isFinite(order) ? order : null,
+        isImportant: !!isImportant,
         type: type === 'counter' ? 'counter' : 'check',
         targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null
     };
@@ -132,6 +134,11 @@ async function updateTodoItemOrders(groupId, orderEntries) {
     await update(ref(database), updates);
 }
 
+async function updateTodoItemImportant(groupId, itemId, isImportant) {
+    const dbRef = ref(database, `lostark/todo_catalog/${groupId}/items/${itemId}`);
+    await update(dbRef, { isImportant: !!isImportant });
+}
+
 export {
     getAllTodoGroups,
     createTodoGroup,
@@ -139,5 +146,6 @@ export {
     addTodoItem,
     deleteTodoItem,
     updateTodoGroupOrders,
-    updateTodoItemOrders
+    updateTodoItemOrders,
+    updateTodoItemImportant
 };

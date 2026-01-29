@@ -1,7 +1,7 @@
 import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './lostark-api.js';
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder, subscribeToCharacterGroups } from './character-storage.js';
-import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders } from './todo-storage.js';
-import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders } from './expedition-todo-storage.js';
+import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders, updateTodoItemImportant } from './todo-storage.js';
+import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders, updateExpeditionTodoImportant } from './expedition-todo-storage.js';
 import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter, subscribeToCharacterTodoState, resetAllCharacterTodos, resetTodosForCharacterGroup } from './character-todo-selection.js';
 import { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState, resetAllExpeditionTodos, resetTodosForExpeditionGroup } from './expedition-todo-state.js';
 import { auth, database } from './firebase-config.js';
@@ -142,6 +142,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 3. Weekly Reset Check
     await checkAndResetWeekly();
+
+    // 4. Important Todo Reminder (Mon/Tue)
+    setTimeout(() => {
+        checkImportantTodosAndNotify();
+    }, 1000); // Wait a bit for states to settle
 });
 
 // Weekly Reset Logic (Wed 10:00 AM)
@@ -188,6 +193,63 @@ async function checkAndResetWeekly() {
         }
     } catch (error) {
         console.error("Weekly reset check failed:", error);
+    }
+}
+
+// 중요 숙제 알림 (월/화)
+function checkImportantTodosAndNotify() {
+    const now = new Date();
+    const day = now.getDay();
+    // 1: 월요일, 2: 화요일
+    if (day !== 1 && day !== 2) return;
+
+    const uncompletedImportant = [];
+
+    // 1. 원정대 숙제 확인
+    allGroups.forEach(group => {
+        const groupId = group.groupId;
+        expeditionTodoItems.forEach(item => {
+            if (item.isImportant) {
+                const value = getExpeditionTodoValue(groupId, item.itemId);
+                const isCompleted = isTodoItemCompleted(resolveTodoType(item), resolveTargetCount(item), value);
+                if (!isCompleted) {
+                    uncompletedImportant.push(`[${group.representativeName}] 원정대: ${item.name}`);
+                }
+            }
+        });
+    });
+
+    // 2. 캐릭터 숙제 확인
+    allGroups.forEach(group => {
+        const groupId = group.groupId;
+        group.characters.forEach(char => {
+            const charKey = getCharacterKey(char);
+            const selected = getSelectedGroupIdsForCharacter(charKey);
+            const selectedSet = Array.isArray(selected) ? new Set(selected) : null;
+
+            todoGroups.forEach(todoGroup => {
+                if (selectedSet && !selectedSet.has(todoGroup.groupId)) return;
+
+                todoGroup.items.forEach(item => {
+                    if (item.isImportant) {
+                        const value = getTodoValueForCharacter(charKey, todoGroup.groupId, item.itemId);
+                        const isCompleted = isTodoItemCompleted(resolveTodoType(item), resolveTargetCount(item), value);
+                        if (!isCompleted) {
+                            uncompletedImportant.push(`[${char.CharacterName}] ${item.name}`);
+                        }
+                    }
+                });
+            });
+        });
+    });
+
+    if (uncompletedImportant.length > 0) {
+        const message = `월/화요일입니다! 아직 완료하지 않은 중요 숙제가 ${uncompletedImportant.length}개 있습니다.\n\n` +
+            uncompletedImportant.slice(0, 10).join('\n') +
+            (uncompletedImportant.length > 10 ? `\n...외 ${uncompletedImportant.length - 10}개` : '');
+
+        // 간단하게 alert으로 먼저 구현 (추후 예쁜 모달로 변경 가능)
+        alert(message);
     }
 }
 
@@ -253,6 +315,7 @@ function renderTodoManagerList() {
                             <span class="todo-item-name">${item.name}</span>
                         </div>
                         <div class="todo-manager-actions-inline">
+                            <button class="secondary-btn xs todo-item-important-btn ${item.isImportant ? 'active' : ''}" data-group-id="${group.groupId}" data-item-id="${item.itemId}" title="중요 표시">${item.isImportant ? '중요' : '일반'}</button>
                             <button class="secondary-btn xs todo-item-move-btn" data-direction="up" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▲</button>
                             <button class="secondary-btn xs todo-item-move-btn" data-direction="down" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▼</button>
                             <button class="secondary-btn xs todo-item-delete-btn" data-group-id="${group.groupId}" data-item-id="${item.itemId}">삭제</button>
@@ -298,6 +361,7 @@ function renderExpeditionTodoList() {
                             <span class="todo-item-name">${item.name}</span>
                         </div>
                         <div class="todo-manager-actions-inline">
+                            <button class="secondary-btn xs expedition-item-important-btn ${item.isImportant ? 'active' : ''}" data-item-id="${item.itemId}" title="중요 표시">${item.isImportant ? '중요' : '일반'}</button>
                             <button class="secondary-btn xs expedition-item-move-btn" data-direction="up" data-item-id="${item.itemId}">▲</button>
                             <button class="secondary-btn xs expedition-item-move-btn" data-direction="down" data-item-id="${item.itemId}">▼</button>
                             <button class="secondary-btn xs expedition-item-delete-btn" data-item-id="${item.itemId}">삭제</button>
@@ -1277,7 +1341,7 @@ function buildExpeditionTodoBlock(groupId, options = {}) {
         if (type === 'counter') {
             const checkboxId = `expedition-${safeDomId(groupId, 'group')}-${itemIdSafe}`;
             return `
-                <li class="todo-item-row counter-row" data-type="counter" data-target="${targetCount ?? ''}" data-value="${value}" data-completable="${isCompletable}" data-completed="${isCompleted}" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}">
+                <li class="todo-item-row counter-row ${item.isImportant ? 'important' : ''}" data-type="counter" data-target="${targetCount ?? ''}" data-value="${value}" data-completable="${isCompletable}" data-completed="${isCompleted}" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}">
                     <div class="todo-check">
                         <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}" ${isCompleted ? 'checked' : ''}>
                         <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
@@ -1291,7 +1355,7 @@ function buildExpeditionTodoBlock(groupId, options = {}) {
 
         const checkboxId = `expedition-${safeDomId(groupId, 'group')}-${itemIdSafe}`;
         return `
-            <li class="todo-item-row" data-type="check" data-target="" data-value="${value}" data-completable="true" data-completed="${isCompleted}" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}">
+            <li class="todo-item-row ${item.isImportant ? 'important' : ''}" data-type="check" data-target="" data-value="${value}" data-completable="true" data-completed="${isCompleted}" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}">
                 <input type="checkbox" id="${checkboxId}" class="todo-checkbox" data-expedition="true" data-group-id="${groupId}" data-item-id="${itemId}" ${isCompleted ? 'checked' : ''}>
                 <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
             </li>
@@ -1334,7 +1398,7 @@ function buildCharacterCards(characters, options = {}) {
                     if (type === 'counter') {
                         const checkboxId = `todo-${safeDomId(charKey, 'char')}-${groupIdSafe}-${itemIdSafe}`;
                         return `
-                            <li class="todo-item-row counter-row" data-type="counter" data-target="${targetCount ?? ''}" data-value="${value}" data-completable="${isCompletable}" data-completed="${isCompleted}" ${sharedAttrs}>
+                            <li class="todo-item-row counter-row ${item.isImportant ? 'important' : ''}" data-type="counter" data-target="${targetCount ?? ''}" data-value="${value}" data-completable="${isCompletable}" data-completed="${isCompleted}" ${sharedAttrs}>
                                 <div class="todo-check">
                                     <input type="checkbox" id="${checkboxId}" class="todo-checkbox" ${sharedAttrs} ${isCompleted ? 'checked' : ''}>
                                     <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
@@ -1348,7 +1412,7 @@ function buildCharacterCards(characters, options = {}) {
 
                     const checkboxId = `todo-${safeDomId(charKey, 'char')}-${groupIdSafe}-${itemIdSafe}`;
                     return `
-                            <li class="todo-item-row" data-type="check" data-target="" data-value="${value}" data-completable="true" data-completed="${isCompleted}" ${sharedAttrs}>
+                            <li class="todo-item-row ${item.isImportant ? 'important' : ''}" data-type="check" data-target="" data-value="${value}" data-completable="true" data-completed="${isCompleted}" ${sharedAttrs}>
                                 <input type="checkbox" id="${checkboxId}" class="todo-checkbox" ${sharedAttrs} ${isCompleted ? 'checked' : ''}>
                                 <label for="${checkboxId}" class="todo-text">${item.name || ''}</label>
                             </li>
@@ -1707,6 +1771,27 @@ todoManagerList.addEventListener('click', async (e) => {
         return;
     }
 
+    const importantBtn = e.target.closest('.todo-item-important-btn');
+    if (importantBtn) {
+        const { groupId, itemId } = importantBtn.dataset;
+        const group = todoGroups.find(g => g.groupId === groupId);
+        const item = group?.items?.find(i => i.itemId === itemId);
+        if (item) {
+            const nextImportant = !item.isImportant;
+            try {
+                await updateTodoItemImportant(groupId, itemId, nextImportant);
+                item.isImportant = nextImportant;
+                renderTodoManagerList();
+                rerenderCurrentCardsWithTodos();
+                showToast(nextImportant ? '중요 항목으로 설정했습니다.' : '중요 항목 설정을 해제했습니다.');
+            } catch (error) {
+                console.error('중요 상태 업데이트 실패:', error);
+                showToast('상태 업데이트에 실패했습니다.', 'error');
+            }
+        }
+        return;
+    }
+
     const deleteItemBtn = e.target.closest('.todo-item-delete-btn');
     if (deleteItemBtn) {
         const { groupId, itemId } = deleteItemBtn.dataset;
@@ -1747,7 +1832,7 @@ todoManagerList.addEventListener('click', async (e) => {
     if (deleteGroupBtn) {
         const groupId = deleteGroupBtn.dataset.groupId;
         const targetGroup = todoGroups.find(g => g.groupId === groupId);
-        const confirmed = await showConfirmModal(`"${targetGroup?.name || '그룹'}" 그룹을 삭제하시겠습니까?`);
+        const confirmed = await showConfirmModal(`"${targetGroup?.name || '그룹'}" 그룹을 삭제하시겠습니까 ? `);
         if (!confirmed) return;
 
         try {
@@ -1792,6 +1877,25 @@ expeditionTodoAddBtn?.addEventListener('click', async () => {
 });
 
 expeditionTodoList?.addEventListener('click', async (e) => {
+    const importantBtn = e.target.closest('.expedition-item-important-btn');
+    if (importantBtn) {
+        const { itemId } = importantBtn.dataset;
+        const item = expeditionTodoItems.find(i => i.itemId === itemId);
+        if (item) {
+            const nextImportant = !item.isImportant;
+            try {
+                await updateExpeditionTodoImportant(itemId, nextImportant);
+                item.isImportant = nextImportant;
+                renderExpeditionTodoList();
+                rerenderCurrentCardsWithTodos();
+                showToast(nextImportant ? '중요 항목으로 설정했습니다.' : '중요 항목 설정을 해제했습니다.');
+            } catch (error) {
+                console.error('중요 상태 업데이트 실패:', error);
+                showToast('상태 업데이트에 실패했습니다.', 'error');
+            }
+        }
+        return;
+    }
     const deleteBtn = e.target.closest('.expedition-item-delete-btn');
     if (deleteBtn) {
         const { itemId } = deleteBtn.dataset;
@@ -1858,7 +1962,7 @@ async function searchCharacter(characterName) {
     showLoading(true);
 
     try {
-        console.log(`캐릭터 조회 중: ${characterName}`);
+        console.log(`캐릭터 조회 중: ${characterName} `);
         const siblings = await getCharacterSiblings(characterName);
 
         console.log('API 응답:', siblings);
@@ -1888,19 +1992,19 @@ async function searchCharacter(characterName) {
 // 에러 표시
 function displayError(message) {
     resultContainer.innerHTML = `
-        <div class="error-message">
+        < div class="error-message" >
             <h3>❌ 오류 발생</h3>
             <p>${message}</p>
             <button onclick="document.getElementById('token-settings-btn').click()" class="primary-btn">
                 토큰 설정하기
             </button>
-        </div>
-    `;
+        </div >
+        `;
 }
 
 // 캐릭터 키 생성 (이름 + 서버)
 function getCharacterKey(char) {
-    return `${char.CharacterName || ''}__${char.ServerName || ''}`;
+    return `${char.CharacterName || ''}__${char.ServerName || ''} `;
 }
 
 // 캐릭터별 더미 Todo 생성 (해시 기반으로 2~3개 결정)
@@ -2050,7 +2154,7 @@ async function persistCharacterOrder(groupId, cards) {
         card.dataset.displayOrder = index;
         const badge = card.querySelector('.order-badge');
         if (badge) {
-            badge.textContent = `#${index + 1}`;
+            badge.textContent = `#${index + 1} `;
         }
     });
 
