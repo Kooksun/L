@@ -1985,7 +1985,7 @@ todoManagerList.addEventListener('click', async (e) => {
     if (deleteGroupBtn) {
         const groupId = deleteGroupBtn.dataset.groupId;
         const targetGroup = todoGroups.find(g => g.groupId === groupId);
-        const confirmed = await showConfirmModal(`"${targetGroup?.name || '그룹'}" 그룹을 삭제하시겠습니까 ? `);
+        const confirmed = await showConfirmModal(`"${targetGroup?.name || '그룹'}" 그룹을 삭제하시겠습니까?`);
         if (!confirmed) return;
 
         try {
@@ -2135,7 +2135,7 @@ async function searchCharacter(characterName) {
     showLoading(true);
 
     try {
-        console.log(`캐릭터 조회 중: ${characterName} `);
+        console.log(`캐릭터 조회 중: ${characterName}`);
         const siblings = await getCharacterSiblings(characterName);
 
         console.log('API 응답:', siblings);
@@ -2165,19 +2165,19 @@ async function searchCharacter(characterName) {
 // 에러 표시
 function displayError(message) {
     resultContainer.innerHTML = `
-        < div class="error-message" >
+        <div class="error-message">
             <h3>❌ 오류 발생</h3>
             <p>${message}</p>
             <button onclick="document.getElementById('token-settings-btn').click()" class="primary-btn">
                 토큰 설정하기
             </button>
-        </div >
-        `;
+        </div>
+    `;
 }
 
 // 캐릭터 키 생성 (이름 + 서버)
 function getCharacterKey(char) {
-    return `${char.CharacterName || ''}__${char.ServerName || ''} `;
+    return `${char.CharacterName || ''}__${char.ServerName || ''}`;
 }
 
 // 캐릭터별 더미 Todo 생성 (해시 기반으로 2~3개 결정)
@@ -2327,7 +2327,7 @@ async function persistCharacterOrder(groupId, cards) {
         card.dataset.displayOrder = index;
         const badge = card.querySelector('.order-badge');
         if (badge) {
-            badge.textContent = `#${index + 1} `;
+            badge.textContent = `#${index + 1}`;
         }
     });
 
