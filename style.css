@@ -584,6 +584,12 @@ header h1 {
     color: #9be7a2;
 }
 
+.todo-badge.level {
+    background: rgba(162, 155, 254, 0.1);
+    border-color: rgba(162, 155, 254, 0.5);
+    color: #a29bfe;
+}
+
 .meta.sub {
     color: #a6acb1;
     font-size: 0.85rem;

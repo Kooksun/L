@@ -11,7 +11,8 @@ function normalizeTodoItems(itemsObj) {
         order: Number.isFinite(itemsObj[key]?.order) ? itemsObj[key].order : null,
         isImportant: !!itemsObj[key]?.isImportant,
         type: itemsObj[key]?.type === 'counter' ? 'counter' : 'check',
-        targetCount: Number.isFinite(itemsObj[key]?.targetCount) ? Number(itemsObj[key].targetCount) : null
+        targetCount: Number.isFinite(itemsObj[key]?.targetCount) ? Number(itemsObj[key].targetCount) : null,
+        minLevel: Number.isFinite(itemsObj[key]?.minLevel) ? Number(itemsObj[key].minLevel) : null
     })).sort((a, b) => {
         const aHasOrder = Number.isFinite(a.order);
         const bHasOrder = Number.isFinite(b.order);
@@ -89,14 +90,20 @@ async function deleteTodoGroup(groupId) {
     await remove(dbRef);
 }
 
-async function addTodoItem(groupId, itemName, order = null, type = 'check', targetCount = null, isImportant = false) {
+async function renameTodoGroup(groupId, newName) {
+    const dbRef = ref(database, `lostark/todo_catalog/${groupId}`);
+    await update(dbRef, { name: newName });
+}
+
+async function addTodoItem(groupId, itemName, order = null, type = 'check', targetCount = null, isImportant = false, minLevel = null) {
     const payload = {
         name: itemName,
         createdAt: new Date().toISOString(),
         order: Number.isFinite(order) ? order : null,
         isImportant: !!isImportant,
         type: type === 'counter' ? 'counter' : 'check',
-        targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null
+        targetCount: Number.isFinite(targetCount) ? Number(targetCount) : null,
+        minLevel: Number.isFinite(minLevel) ? Number(minLevel) : null
     };
 
     const dbRef = ref(database, `lostark/todo_catalog/${groupId}/items`);
@@ -139,6 +146,11 @@ async function updateTodoItemImportant(groupId, itemId, isImportant) {
     await update(dbRef, { isImportant: !!isImportant });
 }
 
+async function updateTodoItemName(groupId, itemId, name) {
+    const dbRef = ref(database, `lostark/todo_catalog/${groupId}/items/${itemId}`);
+    await update(dbRef, { name });
+}
+
 export {
     getAllTodoGroups,
     createTodoGroup,
@@ -147,5 +159,7 @@ export {
     deleteTodoItem,
     updateTodoGroupOrders,
     updateTodoItemOrders,
-    updateTodoItemImportant
+    updateTodoItemImportant,
+    updateTodoItemName,
+    renameTodoGroup
 };

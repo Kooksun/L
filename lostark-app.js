@@ -1,7 +1,7 @@
 import { getStoredToken, saveToken, clearToken, getCharacterSiblings } from './lostark-api.js';
 import { saveCharacterGroup, getAllCharacterGroups, deleteCharacterGroup, updateCharacterOrder, subscribeToCharacterGroups } from './character-storage.js';
-import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders, updateTodoItemImportant } from './todo-storage.js';
-import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders, updateExpeditionTodoImportant } from './expedition-todo-storage.js';
+import { getAllTodoGroups, createTodoGroup, deleteTodoGroup, addTodoItem, deleteTodoItem, updateTodoGroupOrders, updateTodoItemOrders, updateTodoItemImportant, updateTodoItemName, renameTodoGroup } from './todo-storage.js';
+import { getExpeditionTodoItems, addExpeditionTodoItem, deleteExpeditionTodoItem, updateExpeditionTodoOrders, updateExpeditionTodoImportant, updateExpeditionTodoName } from './expedition-todo-storage.js';
 import { fetchAllCharacterTodoState, saveSelectedGroupsForCharacter, clearTodoSelectionForCharacter, saveTodoCompletionForCharacter, subscribeToCharacterTodoState, resetAllCharacterTodos, resetTodosForCharacterGroup } from './character-todo-selection.js';
 import { fetchExpeditionTodoState, saveExpeditionTodoCompletion, subscribeToExpeditionTodoState, resetAllExpeditionTodos, resetTodosForExpeditionGroup } from './expedition-todo-state.js';
 import { auth, database } from './firebase-config.js';
@@ -296,6 +296,7 @@ function renderTodoManagerList() {
                     <div class="meta">${group.items?.length || 0}개 항목</div>
                 </div>
                 <div class="todo-manager-actions-inline">
+                    <button class="secondary-btn xs todo-group-edit-btn" data-group-id="${group.groupId}" data-name="${group.name}">편집</button>
                     <button class="secondary-btn xs todo-group-move-btn" data-direction="up" data-group-id="${group.groupId}">▲</button>
                     <button class="secondary-btn xs todo-group-move-btn" data-direction="down" data-group-id="${group.groupId}">▼</button>
                     <button class="danger-btn small todo-group-delete-btn" data-group-id="${group.groupId}">삭제</button>
@@ -313,8 +314,10 @@ function renderTodoManagerList() {
                         <div class="todo-manager-item-meta">
                             <span class="todo-badge ${type}">${badgeLabel}</span>
                             <span class="todo-item-name">${item.name}</span>
+                            ${item.minLevel ? `<span class="todo-badge level">Lv.${item.minLevel}↑</span>` : ''}
                         </div>
                         <div class="todo-manager-actions-inline">
+                            <button class="secondary-btn xs todo-item-edit-btn" data-group-id="${group.groupId}" data-item-id="${item.itemId}" data-name="${item.name}">편집</button>
                             <button class="secondary-btn xs todo-item-important-btn ${item.isImportant ? 'active' : ''}" data-group-id="${group.groupId}" data-item-id="${item.itemId}" title="중요 표시">${item.isImportant ? '중요' : '일반'}</button>
                             <button class="secondary-btn xs todo-item-move-btn" data-direction="up" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▲</button>
                             <button class="secondary-btn xs todo-item-move-btn" data-direction="down" data-group-id="${group.groupId}" data-item-id="${item.itemId}">▼</button>
@@ -331,6 +334,7 @@ function renderTodoManagerList() {
                     <option value="counter">카운터</option>
                 </select>
                 <input type="number" class="todo-item-target-input" id="todo-item-target-${group.groupId}" data-group-id="${group.groupId}" placeholder="목표(선택)" min="1" step="1">
+                <input type="number" class="todo-item-min-level-input" id="todo-item-min-level-${group.groupId}" data-group-id="${group.groupId}" placeholder="Lv제한" min="0" step="1" style="width: 70px;">
                 <button class="primary-btn todo-item-add-btn" data-group-id="${group.groupId}">추가</button>
             </div>
         </div>
@@ -361,6 +365,7 @@ function renderExpeditionTodoList() {
                             <span class="todo-item-name">${item.name}</span>
                         </div>
                         <div class="todo-manager-actions-inline">
+                            <button class="secondary-btn xs expedition-item-edit-btn" data-item-id="${item.itemId}" data-name="${item.name}">편집</button>
                             <button class="secondary-btn xs expedition-item-important-btn ${item.isImportant ? 'active' : ''}" data-item-id="${item.itemId}" title="중요 표시">${item.isImportant ? '중요' : '일반'}</button>
                             <button class="secondary-btn xs expedition-item-move-btn" data-direction="up" data-item-id="${item.itemId}">▲</button>
                             <button class="secondary-btn xs expedition-item-move-btn" data-direction="down" data-item-id="${item.itemId}">▼</button>
@@ -1379,8 +1384,14 @@ function getTodoGroupsForCard(char) {
         const availableGroups = todoGroups.map(group => ({
             groupId: group.groupId || safeDomId(group.name, 'group'),
             name: group.name || '이름 없는 그룹',
-            items: group.items || []
-        }));
+            items: (group.items || []).filter(item => {
+                if (item.minLevel) {
+                    const charLevel = parseItemLevelValue(char.ItemAvgLevel);
+                    if (charLevel < item.minLevel) return false;
+                }
+                return true;
+            })
+        })).filter(group => group.items.length > 0);
 
         const selected = getSelectedGroupIdsForCharacter(getCharacterKey(char));
         const hasCustomSelection = Array.isArray(selected);
@@ -1827,6 +1838,26 @@ todoGroupAddBtn.addEventListener('click', async () => {
 });
 
 todoManagerList.addEventListener('click', async (e) => {
+    const groupEditBtn = e.target.closest('.todo-group-edit-btn');
+    if (groupEditBtn) {
+        const { groupId, name } = groupEditBtn.dataset;
+        const newName = prompt('그룹 이름을 수정하세요:', name);
+        if (newName && newName.trim() && newName !== name) {
+            try {
+                await renameTodoGroup(groupId, newName.trim());
+                showToast('그룹 이름을 수정했습니다.');
+                const group = todoGroups.find(g => g.groupId === groupId);
+                if (group) group.name = newName.trim();
+                renderTodoManagerList();
+                rerenderCurrentCardsWithTodos();
+            } catch (error) {
+                console.error('그룹 이름 수정 실패:', error);
+                showToast('그룹 수정에 실패했습니다.', 'error');
+            }
+        }
+        return;
+    }
+
     const addBtn = e.target.closest('.todo-item-add-btn');
     if (addBtn) {
         const groupId = addBtn.dataset.groupId;
@@ -1839,28 +1870,56 @@ todoManagerList.addEventListener('click', async (e) => {
         }
         const typeSelect = document.getElementById(`todo-item-type-${groupId}`);
         const targetInput = document.getElementById(`todo-item-target-${groupId}`);
+        const minLevelInput = document.getElementById(`todo-item-min-level-${groupId}`);
         const selectedType = typeSelect?.value === 'counter' ? 'counter' : 'check';
         const parsedTarget = Number(targetInput?.value);
         const targetCount = selectedType === 'counter' && Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : null;
+        const parsedMinLevel = Number(minLevelInput?.value);
+        const minLevel = Number.isFinite(parsedMinLevel) && parsedMinLevel > 0 ? parsedMinLevel : null;
 
         addBtn.disabled = true;
         try {
             const group = todoGroups.find(g => g.groupId === groupId);
-            const newItem = await addTodoItem(groupId, value, (group?.items?.length ?? 0), selectedType, targetCount);
+            const newItem = await addTodoItem(groupId, value, (group?.items?.length ?? 0), selectedType, targetCount, false, minLevel);
             if (group) {
                 group.items = [...(group.items || []), newItem];
             }
             input.value = '';
             if (typeSelect) typeSelect.value = 'check';
             if (targetInput) targetInput.value = '';
+            if (minLevelInput) minLevelInput.value = '';
             renderTodoManagerList();
             rerenderCurrentCardsWithTodos();
             showToast('항목을 추가했습니다.');
         } catch (error) {
             console.error('TODO 항목 추가 실패:', error);
-            showToast('항목 추가에 실패했습니다.', 'error');
+            showToast('TODO 항목 추가에 실패했습니다.', 'error');
         } finally {
             addBtn.disabled = false;
+        }
+        return;
+    }
+
+    const editBtn = e.target.closest('.todo-item-edit-btn');
+    if (editBtn) {
+        const { groupId, itemId, name } = editBtn.dataset;
+        const newName = prompt('항목 이름을 수정하세요:', name);
+        if (newName && newName.trim() && newName !== name) {
+            try {
+                await updateTodoItemName(groupId, itemId, newName.trim());
+                showToast('항목 이름을 수정했습니다.');
+                // 로컬 데이터 업데이트
+                const group = todoGroups.find(g => g.groupId === groupId);
+                if (group) {
+                    const item = group.items.find(i => i.itemId === itemId);
+                    if (item) item.name = newName.trim();
+                }
+                renderTodoManagerList();
+                rerenderCurrentCardsWithTodos();
+            } catch (error) {
+                console.error('TODO 항목 수정 실패:', error);
+                showToast('항목 수정에 실패했습니다.', 'error');
+            }
         }
         return;
     }
@@ -1971,6 +2030,26 @@ expeditionTodoAddBtn?.addEventListener('click', async () => {
 });
 
 expeditionTodoList?.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest('.expedition-item-edit-btn');
+    if (editBtn) {
+        const { itemId, name } = editBtn.dataset;
+        const newName = prompt('항목 이름을 수정하세요:', name);
+        if (newName && newName.trim() && newName !== name) {
+            try {
+                await updateExpeditionTodoName(itemId, newName.trim());
+                showToast('항목 이름을 수정했습니다.');
+                const item = expeditionTodoItems.find(i => i.itemId === itemId);
+                if (item) item.name = newName.trim();
+                renderExpeditionTodoList();
+                rerenderCurrentCardsWithTodos();
+            } catch (error) {
+                console.error('원정대 TODO 수정 실패:', error);
+                showToast('항목 수정에 실패했습니다.', 'error');
+            }
+        }
+        return;
+    }
+
     const importantBtn = e.target.closest('.expedition-item-important-btn');
     if (importantBtn) {
         const { itemId } = importantBtn.dataset;

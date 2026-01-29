@@ -73,10 +73,16 @@ async function updateExpeditionTodoImportant(itemId, isImportant) {
     await update(dbRef, { isImportant: !!isImportant });
 }
 
+async function updateExpeditionTodoName(itemId, name) {
+    const dbRef = ref(database, `lostark/expedition_todo_catalog/${itemId}`);
+    await update(dbRef, { name });
+}
+
 export {
     getExpeditionTodoItems,
     addExpeditionTodoItem,
     deleteExpeditionTodoItem,
     updateExpeditionTodoOrders,
-    updateExpeditionTodoImportant
+    updateExpeditionTodoImportant,
+    updateExpeditionTodoName
 };
